@@ -1,7 +1,12 @@
 # KPM (Kinetic Predictor Model Package)
- [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+---
+
+href="https://github.com/idilismail/KineticPredictorModel/blob/main/LICENSE" ><img
+src="https://img.shields.io/github/license/idilismail/KineticPredictorModel" alt="License"
+/></a> </p>
 
 A Python package for training and testing neural networks for the prediction of reaction activation energies. Implemented with a full command line interface (CLI) for ease of use.
+---
 
 ## Installation
 
