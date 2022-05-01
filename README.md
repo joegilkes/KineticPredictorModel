@@ -80,3 +80,9 @@ KPM {sub-command} -h
 ```
 
 Examples of running these sub-commands for their respective purposes are provided in the `examples` folder.
+
+## License and copyright
+
+Idil Ismail
+
+Licensed under the [MIT License](LICENSE).
