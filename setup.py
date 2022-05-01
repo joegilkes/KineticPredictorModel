@@ -11,9 +11,9 @@ setuptools.setup(
     description="Package for producting models to predict activation energies of reactions.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/pypa/sampleproject", # CHANGE ME
+    url="https://github.com/idilismail/KineticPredictorModel", 
     project_urls={
-        "Bug Tracker": "https://github.com/pypa/sampleproject/issues", # CHANGE ME
+        "Bug Tracker": "https://github.com/idilismail/KineticPredictorModel/issues", 
     },
     classifiers=[
         "Programming Language :: Python :: 3",
