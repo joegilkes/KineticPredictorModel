@@ -83,6 +83,6 @@ Examples of running these sub-commands for their respective purposes are provide
 
 ## License and copyright
 
-Idil Ismail
+&copy; Idil Ismail
 
 Licensed under the [MIT License](LICENSE).
