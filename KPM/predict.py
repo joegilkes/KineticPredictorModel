@@ -41,6 +41,7 @@ class ModelPredictor:
         self.prod = args.product
         self.enthalpy = args.enthalpy
         self.outfile = args.outfile
+        self.direction = args.direction
         self.verbose = True if args.verbose == 'True' else False
 
         if self.outfile is not None:
@@ -118,8 +119,36 @@ class ModelPredictor:
         else:
             self.num_reacs = len(self.dH_arr)
 
+        # Manipulate arrays based on prediction direction.
+        if self.direction == 'backward':
+            self.rsmi, self.psmi = self.psmi, self.rsmi
+            rmol, pmol = pmol, rmol
+            self.dH_arr = np.flip(self.dH_arr)
+        elif self.direction == 'both':
+            rsmi_combined = []
+            psmi_combined = []
+            rmol_combined = []
+            pmol_combined = []
+            dH_combined = np.zeros(self.num_reacs*2)
+            for i, (rs, ps, rm, pm) in enumerate(zip(rsmi, psmi, rmol, pmol)):
+                rsmi_combined.append(rs)
+                psmi_combined.append(ps)
+                rmol_combined.append(rm)
+                pmol_combined.append(pm)
+                dH_combined[2*i] = self.dH_arr[i]
+                rsmi_combined.append(ps)
+                psmi_combined.append(rs)
+                rmol_combined.append(pm)
+                pmol_combined.append(rm)
+                dH_combined[(2*i)+1] = -self.dH_arr[i]
+            self.rsmi = rsmi_combined
+            self.psmi = psmi_combined
+            rmol = rmol_combined
+            pmol = pmol_combined
+            self.dH_arr = dH_combined
+
         # Calculate reaction difference fingerprint.
-        diffs = calc_diffs(self.num_reacs, self.descriptor_type, rmol, pmol, self.dH_arr,
+        diffs = calc_diffs(self.num_reacs*2, self.descriptor_type, rmol, pmol, self.dH_arr,
                           self.morgan_radius, self.morgan_num_bits)
 
         return diffs
@@ -134,8 +163,9 @@ class ModelPredictor:
         if self.verbose: print('Getting reaction difference fingerprints.')
         diffs = self.scaler.transform(diffs)
 
-        if self.verbose: print(f'Predicting activation energy over {self.nn_ensemble_size} NNs.')
-        Eact_pred = np.zeros(self.num_reacs)
+        if self.verbose: print(f'Predicting activation energies over {self.nn_ensemble_size} NNs.')
+        n_reacs_adj = self.num_reacs if self.direction != 'both' else self.num_reacs*2
+        Eact_pred = np.zeros(n_reacs_adj)
         for i in range(self.nn_ensemble_size):
             pred = self.regr[i].predict(diffs)
             pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
@@ -154,19 +184,67 @@ class ModelPredictor:
                 f.writelines('\n'.join(output))
 
         for i in range(self.num_reacs):
-            print(f'Reaction {i+1}: Predicted Eact = {Eact_pred[i]} kcal/mol')
-            if self.outfile is not None:
+            if self.direction == 'forward':
+                print(f'Reaction {i+1}: Predicted Eact = {Eact_pred[i]} kcal/mol')
+                if self.outfile is not None:
 
-                output = [
-                    f'# Reaction {i+1}',
-                    f'# Reactant SMILES: {self.rsmi[i]}',
-                    f'# Product SMILES: {self.psmi[i]}',
-                    f'# dH: {self.dH_arr[i]} kcal/mol',
-                    f'# Eact prediction (in kcal/mol) follows:',
-                    f'{Eact_pred[i]}',
-                    '\n'
-                ]
-                with open(self.outfile, 'a') as f:
-                    f.writelines('\n'.join(output))
+                    output = [
+                        f'# Reaction {i+1}',
+                        f'# Reactant SMILES: {self.rsmi[i]}',
+                        f'# Product SMILES: {self.psmi[i]}',
+                        f'# dH: {self.dH_arr[i]} kcal/mol',
+                        f'# Eact prediction (in kcal/mol) follows:',
+                        f'{Eact_pred[i]}',
+                        '\n'
+                    ]
+                    with open(self.outfile, 'a') as f:
+                        f.writelines('\n'.join(output))
+
+            elif self.direction == 'backward':
+                print(f'Backward Reaction {i+1}: Predicted Eact = {Eact_pred[i]} kcal/mol')
+                if self.outfile is not None:
+
+                    output = [
+                        f'# Backward Reaction {i+1}',
+                        f'# Reactant SMILES: {self.rsmi[i]}',
+                        f'# Product SMILES: {self.psmi[i]}',
+                        f'# dH: {self.dH_arr[i]} kcal/mol',
+                        f'# Eact prediction (in kcal/mol) follows:',
+                        f'{Eact_pred[i]}',
+                        '\n'
+                    ]
+                    with open(self.outfile, 'a') as f:
+                        f.writelines('\n'.join(output))
+
+            elif self.direction == 'both':
+                print(f'Forward Reaction {i+1}: Predicted Eact = {Eact_pred[2*i]} kcal/mol')
+                if self.outfile is not None:
+
+                    output = [
+                        f'# Forward Reaction {i+1}',
+                        f'# Reactant SMILES: {self.rsmi[2*i]}',
+                        f'# Product SMILES: {self.psmi[2*i]}',
+                        f'# dH: {self.dH_arr[2*i]} kcal/mol',
+                        f'# Eact prediction (in kcal/mol) follows:',
+                        f'{Eact_pred[2*i]}',
+                        '\n'
+                    ]
+                    with open(self.outfile, 'a') as f:
+                        f.writelines('\n'.join(output))
+
+                print(f'Backward Reaction {i+1}: Predicted Eact = {Eact_pred[2*i+1]} kcal/mol')
+                if self.outfile is not None:
+
+                    output = [
+                        f'# Backward Reaction {i+1}',
+                        f'# Reactant SMILES: {self.rsmi[2*i+1]}',
+                        f'# Product SMILES: {self.psmi[2*i+1]}',
+                        f'# dH: {self.dH_arr[2*i+1]} kcal/mol',
+                        f'# Eact prediction (in kcal/mol) follows:',
+                        f'{Eact_pred[2*i+1]}',
+                        '\n'
+                    ]
+                    with open(self.outfile, 'a') as f:
+                        f.writelines('\n'.join(output))
                 
         if self.verbose: print('Output written to file.')

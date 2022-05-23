@@ -33,6 +33,11 @@ class CLICommand(SharedArgs):
                             type=str,
                             default='./KPM_out.txt',
                             help='Path to prediction output text file.')
+        parser.add_argument('--direction',
+                            type=str,
+                            choices=['forward', 'backward', 'both'],
+                            default='forward',
+                            help='Reaction direction(s) to predict activation energies for.')
 
     @staticmethod
     def run(args):
