@@ -4,9 +4,6 @@ Used to create new KPM models and test their accuracy on
 given molecular datasets.
 '''
 
-import matplotlib
-matplotlib.use('TkAgg')
-
 from KPM.utils.data_funcs import load_dataset, extract_data, split_data
 from KPM.utils.data_funcs import normalise, un_normalise
 from KPM.utils.descriptors import calc_diffs
@@ -20,8 +17,6 @@ import numpy as np
 import os
 
 from numpy.typing import ArrayLike
-
-plt.ion()
 
 class ModelTrainer:
     '''Trains a neural network on a dataset of reactions.
