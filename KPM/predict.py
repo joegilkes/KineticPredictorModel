@@ -146,9 +146,11 @@ class ModelPredictor:
             rmol = rmol_combined
             pmol = pmol_combined
             self.dH_arr = dH_combined
+        
+        n_reacs_adj = self.num_reacs if self.direction != 'both' else self.num_reacs*2
 
         # Calculate reaction difference fingerprint.
-        diffs = calc_diffs(self.num_reacs*2, self.descriptor_type, rmol, pmol, self.dH_arr,
+        diffs = calc_diffs(n_reacs_adj, self.descriptor_type, rmol, pmol, self.dH_arr,
                           self.morgan_radius, self.morgan_num_bits)
 
         return diffs
