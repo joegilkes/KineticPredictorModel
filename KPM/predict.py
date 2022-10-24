@@ -111,7 +111,7 @@ class ModelPredictor:
         pmol = [Chem.MolFromSmiles(smi) for smi in psmi]
 
         # Load in enthalpies from file.
-        self.dH_arr = np.loadtxt(self.enthalpy)
+        self.dH_arr = np.loadtxt(self.enthalpy, ndmin=1)
 
         # Check lengths of array/lists.
         if len(self.dH_arr) != len(rmol) or len(self.dH_arr) != len(pmol):
