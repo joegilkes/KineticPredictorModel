@@ -16,7 +16,6 @@ if 'DISPLAY' in os.environ.keys():
         _mpl_backend = 'TkAgg'
 else:
     _mpl_backend = 'Agg'
-print(_mpl_backend)
 matplotlib.use(_mpl_backend)
 
 
