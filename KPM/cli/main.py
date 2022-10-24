@@ -8,7 +8,16 @@ from importlib import import_module
 
 # Needed here or something else imports it with a different backend.
 import matplotlib
-matplotlib.use('TkAgg')
+import os
+if 'DISPLAY' in os.environ.keys():
+    if 'DISPLAY' == '':
+        _mpl_backend = 'Agg'
+    else:
+        _mpl_backend = 'TkAgg'
+else:
+    _mpl_backend = 'Agg'
+print(_mpl_backend)
+matplotlib.use(_mpl_backend)
 
 
 class CLIError(Exception):
