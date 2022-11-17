@@ -9,6 +9,7 @@ from openbabel import pybel
 from rdkit import Chem
 from KPM.utils.descriptors import calc_diffs
 from KPM.utils.data_funcs import un_normalise
+from KPM.utils.ob_extensions import fix_radicals
 
 
 class ModelPredictor:
@@ -91,6 +92,12 @@ class ModelPredictor:
                 pmol.append(pm)
             except StopIteration:
                 gen_stat = False
+
+        # Tidy up weird radical structures so all radicals are consistent.
+        for mol in rmol:
+            fix_radicals(mol)
+        for mol in pmol:
+            fix_radicals(mol)
 
         # These functions return the SMILES followed by the xyz file path, hence the split/strip.
         rsmi = [mol.write('can').split()[0].strip() for mol in rmol]
