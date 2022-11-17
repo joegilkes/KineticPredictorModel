@@ -6,7 +6,7 @@ from existing KPM-trained models.
 
 import numpy as np
 from openbabel import pybel
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from KPM.utils.descriptors import calc_diffs
 from KPM.utils.data_funcs import un_normalise
 from KPM.utils.ob_extensions import fix_radicals
@@ -44,6 +44,9 @@ class ModelPredictor:
         self.outfile = args.outfile
         self.direction = args.direction
         self.verbose = True if args.verbose == 'True' else False
+
+        if args.suppress_rdlogs == 'True':
+            RDLogger.DisableLog('rdApp.*')
 
         if self.outfile is not None:
             print(f'Prediction output will be saved to {self.outfile}')
