@@ -15,6 +15,7 @@ A Python package for training and testing neural networks for the prediction of 
 * Scikit-learn (ver. 0.21 or greater)
 * OpenBabel (ver. 3.1 or greater)
 * RDKit
+* OBCanonicalRadicals (*optional, see below*)
 
 While installation of these packages through `pip` is possible, it is not recommended since OpenBabel installation via this method is not simple and is prone to issues. Instead, the preferred method of installation is through Anaconda.
 
@@ -51,6 +52,10 @@ pip install ./KineticPredictorModel
 ```
 
 requires a separate installation of OpenBabel 3, and is likely to fail due to improper linkage of OpenBabel's Python package (installed as a `pip` dependency) to the already installed backend. It is therefore advisable to separately install the OpenBabel Python package through `pip` before attempting to run the above command to install *KPM*.
+
+### OBCanonicalRadicals
+
+When working with molecules with multiple radical atoms, the internal conversion from XYZ to SMILES (performed by OpenBabel when running `KPM predict`) can sometimes lead to underbonded structures. [OBCanonicalRadicals](https://github.com/joegilkes/OBCanonicalRadicals) is a package that attempts to fix this by resolving these radical structures in a sensible and reproducible way. Provided this package is installed, radicals can be fixed automatically by calling `KPM predict` with the `--fix_radicals True` option.
 
 ## Usage
 

@@ -4,12 +4,18 @@ Used to predict activation energy (Eact) of reactions
 from existing KPM-trained models.
 '''
 
+OBCR_enabled = True
+try:
+    from obcr import fix_radicals
+    from obcr.utils import pbmol_to_smi, is_radical
+except ImportError:
+    OBCR_enabled = False
+
 import numpy as np
 from openbabel import pybel
 from rdkit import Chem, RDLogger
 from KPM.utils.descriptors import calc_diffs
 from KPM.utils.data_funcs import un_normalise
-from KPM.utils.ob_extensions import fix_radicals
 
 
 class ModelPredictor:
@@ -45,6 +51,18 @@ class ModelPredictor:
         self.direction = args.direction
         self.verbose = True if args.verbose == 'True' else False
 
+        if args.fix_radicals == 'True':
+            if not OBCR_enabled:
+                _errstr = (
+                    'Argument \'--fix_radicals\' requires OBCanonicalRadicals to be installed.\n'
+                    'Follow the installation instructions for obtaining and installing the submodule.'  
+                )
+                raise ModuleNotFoundError(_errstr)
+            else:
+                self.fix_radicals = True
+        else:
+            self.fix_radicals = False
+
         if args.suppress_rdlogs == 'True':
             RDLogger.DisableLog('rdApp.*')
 
@@ -68,6 +86,43 @@ class ModelPredictor:
         self.morgan_radius = args.morgan_radius
 
         print('--------------------------------------------\n')
+
+
+    def fix_radical_list(self, smi_list, pbmol_list):
+        '''Fix a list of SMILES stings with OBCanonicalRadicals.
+
+        Iterates through a list of input `pybel.Molecule`s and
+        their respective SMILES strings, separating any fragment
+        species. Cleans up/canonicalises the radical structure of
+        and relevant species, then combines them back into a single
+        SMILES and returns.
+        '''
+        final_smi_list = []
+        for smi, pbmol in zip(smi_list, pbmol_list):
+            species_list = [pybel.Molecule(obmol) for obmol in pbmol.OBMol.Separate()]
+
+            smi_list = []
+            for species in species_list:
+                spec_smi = pbmol_to_smi(species)
+                if is_radical(spec_smi):
+                    print(f'Initial species SMILES: {spec_smi}')
+                    species = fix_radicals(species)
+                    # Force re-parsing of structure to ensure aromaticity is detected.
+                    species.addh()
+                    spec_smi = pbmol_to_smi(species)
+                    print(f'Final species SMILES: {spec_smi}')
+                    smi_list.append(spec_smi)
+                else:
+                    smi_list.append(spec_smi)
+
+            if len(smi_list) == 1:
+                final_smi = smi_list[0]
+            else:
+                final_smi = '.'.join(smi_list)
+
+            final_smi_list.append(final_smi)
+
+        return final_smi_list
 
 
     def get_smiles_from_xyz(self):
@@ -96,15 +151,15 @@ class ModelPredictor:
             except StopIteration:
                 gen_stat = False
 
-        # Tidy up weird radical structures so all radicals are consistent.
-        for mol in rmol:
-            fix_radicals(mol)
-        for mol in pmol:
-            fix_radicals(mol)
 
         # These functions return the SMILES followed by the xyz file path, hence the split/strip.
         rsmi = [mol.write('can').split()[0].strip() for mol in rmol]
         psmi = [mol.write('can').split()[0].strip() for mol in pmol]
+
+        # Tidy up weird radical structures so all radicals are consistent, if requested.
+        if self.fix_radicals:
+            rsmi = self.fix_radical_list(rsmi, rmol)
+            psmi = self.fix_radical_list(psmi, pmol)
 
         return rsmi, psmi
 
