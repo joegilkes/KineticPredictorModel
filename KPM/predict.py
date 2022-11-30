@@ -59,6 +59,7 @@ class ModelPredictor:
                 )
                 raise ModuleNotFoundError(_errstr)
             else:
+                print('Canonical radical structure fixing via OBCanonicalRadicals is enabled.')
                 self.fix_radicals = True
         else:
             self.fix_radicals = False
