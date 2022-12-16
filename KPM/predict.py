@@ -49,6 +49,7 @@ class ModelPredictor:
         self.enthalpy = args.enthalpy
         self.outfile = args.outfile
         self.direction = args.direction
+        self.do_uncertainty = True if args.uncertainty == 'True' else False
         self.verbose = True if args.verbose == 'True' else False
 
         if args.fix_radicals == 'True':
@@ -85,6 +86,9 @@ class ModelPredictor:
         self.norm_type = args.norm_type
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
+
+        if self.do_uncertainty and self.nn_ensemble_size == 1:
+            raise ValueError('Prediction uncertainty cannot be calculated with only a single model in the ensemble.')
 
         print('--------------------------------------------\n')
 
@@ -233,13 +237,14 @@ class ModelPredictor:
 
         if self.verbose: print(f'Predicting activation energies over {self.nn_ensemble_size} NNs.')
         n_reacs_adj = self.num_reacs if self.direction != 'both' else self.num_reacs*2
-        Eact_pred = np.zeros(n_reacs_adj)
+        Eact_pred = np.zeros((n_reacs_adj, self.nn_ensemble_size))
         for i in range(self.nn_ensemble_size):
             pred = self.regr[i].predict(diffs)
             pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
-            Eact_pred += pred
+            Eact_pred[:, i] = pred
 
-        Eact_pred = Eact_pred / self.nn_ensemble_size
+        Eacts = np.mean(Eact_pred, axis=1)
+        uncerts = np.var(Eact_pred, axis=1)
 
         if self.outfile is not None:
             output = [
@@ -251,9 +256,15 @@ class ModelPredictor:
             with open(self.outfile, 'w') as f:
                 f.writelines('\n'.join(output))
 
+        def uncert_str(i):
+            if self.do_uncertainty:
+                return f' += {uncerts[i]}'
+            else:
+                return ''
+
         for i in range(self.num_reacs):
             if self.direction == 'forward':
-                print(f'Reaction {i+1}: Predicted Eact = {Eact_pred[i]} kcal/mol')
+                print(f'Reaction {i+1}: Predicted Eact = {Eacts[i]}{uncert_str(i)} kcal/mol')
                 if self.outfile is not None:
 
                     output = [
@@ -262,14 +273,14 @@ class ModelPredictor:
                         f'# Product SMILES: {self.psmi[i]}',
                         f'# dH: {self.dH_arr[i]} kcal/mol',
                         f'# Eact prediction (in kcal/mol) follows:',
-                        f'{Eact_pred[i]}',
+                        f'{Eacts[i]}{uncert_str(i)}',
                         '\n'
                     ]
                     with open(self.outfile, 'a') as f:
                         f.writelines('\n'.join(output))
 
             elif self.direction == 'backward':
-                print(f'Backward Reaction {i+1}: Predicted Eact = {Eact_pred[i]} kcal/mol')
+                print(f'Backward Reaction {i+1}: Predicted Eact = {Eacts[i]}{uncert_str(i)} kcal/mol')
                 if self.outfile is not None:
 
                     output = [
@@ -278,14 +289,14 @@ class ModelPredictor:
                         f'# Product SMILES: {self.psmi[i]}',
                         f'# dH: {self.dH_arr[i]} kcal/mol',
                         f'# Eact prediction (in kcal/mol) follows:',
-                        f'{Eact_pred[i]}',
+                        f'{Eacts[i]}{uncert_str(i)}',
                         '\n'
                     ]
                     with open(self.outfile, 'a') as f:
                         f.writelines('\n'.join(output))
 
             elif self.direction == 'both':
-                print(f'Forward Reaction {i+1}: Predicted Eact = {Eact_pred[2*i]} kcal/mol')
+                print(f'Forward Reaction {i+1}: Predicted Eact = {Eacts[2*i]}{uncert_str(2*i)} kcal/mol')
                 if self.outfile is not None:
 
                     output = [
@@ -294,13 +305,13 @@ class ModelPredictor:
                         f'# Product SMILES: {self.psmi[2*i]}',
                         f'# dH: {self.dH_arr[2*i]} kcal/mol',
                         f'# Eact prediction (in kcal/mol) follows:',
-                        f'{Eact_pred[2*i]}',
+                        f'{Eacts[2*i]}{uncert_str(2*i)}',
                         '\n'
                     ]
                     with open(self.outfile, 'a') as f:
                         f.writelines('\n'.join(output))
 
-                print(f'Backward Reaction {i+1}: Predicted Eact = {Eact_pred[2*i+1]} kcal/mol')
+                print(f'Backward Reaction {i+1}: Predicted Eact = {Eacts[2*i+1]}{uncert_str(2*i+1)} kcal/mol')
                 if self.outfile is not None:
 
                     output = [
@@ -309,7 +320,7 @@ class ModelPredictor:
                         f'# Product SMILES: {self.psmi[2*i+1]}',
                         f'# dH: {self.dH_arr[2*i+1]} kcal/mol',
                         f'# Eact prediction (in kcal/mol) follows:',
-                        f'{Eact_pred[2*i+1]}',
+                        f'{Eacts[2*i+1]}{uncert_str(2*i+1)}',
                         '\n'
                     ]
                     with open(self.outfile, 'a') as f:

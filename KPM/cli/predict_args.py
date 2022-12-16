@@ -38,6 +38,12 @@ class CLICommand(SharedArgs):
                             choices=['forward', 'backward', 'both'],
                             default='forward',
                             help='Reaction direction(s) to predict activation energies for.')
+        parser.add_argument('--uncertainty',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether to also return the uncertainty in each prediction..'
+                            )
         parser.add_argument('--fix_radicals',
                             type=str,
                             choices=['True', 'False'],

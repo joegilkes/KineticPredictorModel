@@ -11,6 +11,7 @@ from KPM.utils.descriptors import calc_diffs
 from sklearn import preprocessing
 from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.utils import shuffle
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -185,11 +186,13 @@ class ModelTrainer:
         regr = []
         for i in range(self.nn_ensemble_size):
             if self.verbose: print(f'Training NN {i+1}...')
+            rs = self.random_seed+i if self.random_seed is not None else None
+            X, y = shuffle(X_train_scaled, y_train, random_state=rs)
             regr.append(MLPRegressor(hidden_layer_sizes=(200), activation=self.nn_activation_function,
                                      solver=self.nn_solver, learning_rate=self.nn_learning_rate,
                                      learning_rate_init=self.nn_learning_rate_init, max_iter=1000,
-                                     random_state=self.random_seed
-                                     ).fit(X_train_scaled, y_train))
+                                     random_state=rs
+                                     ).fit(X, y))
 
         if self.verbose: print(f'Saving models to {self.model_out}')
         print('Training complete!\n')
@@ -328,29 +331,30 @@ class ModelTester:
         n_reacs = len(X)
         X = self.scaler.transform(X)
 
-        Eact_pred = np.zeros(n_reacs)
+        Eact_pred = np.zeros((n_reacs, self.nn_ensemble_size))
         r2s = np.zeros(self.nn_ensemble_size)
         for i in range(self.nn_ensemble_size):
             pred = self.regr[i].predict(X)
             pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
-            Eact_pred += pred
+            Eact_pred[:, i] = pred
             r2 = self.regr[i].score(X, y)
             r2s[i] = r2
             if self.verbose: print(f'NN{i} R2 = {r2}')
 
-        Eact_pred = Eact_pred / self.nn_ensemble_size
+        Eacts = np.mean(Eact_pred, axis=1)
+        uncerts = np.var(Eact_pred, axis=1)
         if self.verbose: print(f'Average R2 = {np.mean(r2s)}')
 
         # Save predictions if requested.
         if self.training_prediction_dir is not None:
             save_path = os.path.join(self.training_prediction_dir, f'Eact_pred_{data_type}.npz')
-            np.savez(save_path, Eact_pred=Eact_pred)
+            np.savez(save_path, Eacts=Eacts, uncerts=uncerts)
             if self.verbose: print(f'Predictions saved to {save_path}\n')
 
-        return Eact_pred
+        return Eacts, uncerts
 
     
-    def plot_correlation(self, y_true: ArrayLike, y_pred: ArrayLike, data_type: str):
+    def plot_correlation(self, y_true: ArrayLike, y_pred: ArrayLike, y_uncert: ArrayLike, data_type: str):
         '''Use the loaded model to plot correlation between predicted and actual Eact values.
         
         Generic function to plot correlation plots for either training or
@@ -359,6 +363,7 @@ class ModelTester:
         Arguments:
             y_true: Actual Eact values for reactions in dataset.
             y_pred: Predicted Eact values for reactions in dataset.
+            y_uncert: Uncertainties in predicted Eact values.
             data_type: Either 'train' or 'test', determines plot wording and colours.
         '''
         if data_type not in ['train', 'test']:
@@ -385,9 +390,9 @@ class ModelTester:
 
         fig = plt.figure(fignum, figsize=(8, 6), dpi=100)
         plt.plot(y_true, y_true, color='orange', lw=3)
-        plt.plot(y_pred, y_true, 'o', color=col, mfc='white', markersize=8, mew=2, alpha=0.5)
-        plt.xlabel(r"Predicted E$_a$ (kcal/mol)",fontsize=16)
-        plt.ylabel(r"True E$_a$ (kcal/mol)",fontsize=16)
+        plt.errorbar(y_true, y_pred, yerr=y_uncert, fmt='o', color=col, mfc='white', markersize=8, mew=2, alpha=0.5)
+        plt.ylabel(r"Predicted E$_a$ (kcal/mol)", fontsize=16)
+        plt.xlabel(r"True E$_a$ (kcal/mol)", fontsize=16)
         plt.yticks(fontsize=16)
         plt.xticks(fontsize=16)
         if self.plot_dir is not None:
