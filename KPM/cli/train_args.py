@@ -80,6 +80,15 @@ class CLICommand(SharedArgs):
 
         # Neural network optional arguments
         # See https://scikit-learn.org/stable/modules/generated/sklearn.neural_network.MLPClassifier.html for full info.
+        parser.add_argument('--opt_hyperparams',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether to perform a grid search for optimal neural network hyperparameters.')
+        parser.add_argument('--opt_hyperparams_jobs',
+                            type=int,
+                            default=None,
+                            help='Number of parallel threads to perform hyperparameter optimisation over.')
         parser.add_argument('--nn_activation_function',
                             type=str,
                             choices=['identity', 'logistic', 'tanh','relu'],

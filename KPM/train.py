@@ -10,6 +10,7 @@ from KPM.utils.descriptors import calc_diffs
 
 from sklearn import preprocessing
 from sklearn.neural_network import MLPRegressor
+from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.utils import shuffle
 
@@ -54,6 +55,8 @@ class ModelTrainer:
         self.training_prediction_dir = args.training_prediction_dir
         self.save_test_train_path = args.save_test_train_path
         self.plot_dir = args.plot_dir
+        self.do_hyperparams = True if args.opt_hyperparams == 'True' else False
+        self.hyperparam_jobs = args.opt_hyperparams_jobs
         self.nn_activation_function = args.nn_activation_function
         self.nn_ensemble_size = args.nn_ensemble_size
         self.nn_solver = args.nn_solver
@@ -111,9 +114,9 @@ class ModelTrainer:
             if self.verbose: print(f'\nSplitting train/test data by {self.split_method}.')
 
             # Split data into train/test sets.
-            X_train, X_test, y_train, y_test = split_data(self.split_method, diffs, Eact, self.split_ratio,
-                                                          self.random_seed, self.split_num, self.split_index_path,
-                                                          self.verbose)
+            X_train, X_test, y_train, y_test = split_data('train_test_split', diffs, Eact, self.split_ratio,
+                                                          self.random_seed, index_path=self.split_index_path,
+                                                          verbose=self.verbose)
         # Else if loading separate train/test datasets...
         else:
             print('Taking train/test data from separate datasets.')
@@ -171,6 +174,27 @@ class ModelTrainer:
         return X_train, X_test, y_train, y_test
 
 
+    def opt_hyperparams(self, X_train: ArrayLike, y_train: ArrayLike):
+        '''Optimises hyperparameters of an MLPRegressor.
+
+        Arguments:
+            X_train: Array of reaction difference fingerprints.
+            y_train: Array of normalised activation energies.
+        '''
+        est = MLPRegressor(random_state=self.random_seed)
+        param_grid = {
+            'hidden_layer_sizes': [(100), (200), (300), (100, 100), (200, 200)],
+            'alpha': [1e-5, 1e-4, 1e-3],
+            'learning_rate_init': [1e-4, 1e-3, 1e-2],
+            'max_iter': [200, 500, 1000]
+        }
+        cv = KFold(4)
+        gs = GridSearchCV(est, param_grid, cv=cv, n_jobs=self.hyperparam_jobs, verbose=3)
+        gs.fit(X_train, y_train)
+        
+        return gs.best_params_
+
+
     def run(self, X_train: ArrayLike, y_train: ArrayLike):
         '''Runs the model training procedure.
         
@@ -178,21 +202,35 @@ class ModelTrainer:
             X_train: Array of reaction difference fingerprints.
             y_train: Array of normalised activation energies.
         '''
-        print(f'Training {self.nn_ensemble_size} neural networks.')
         scaler = preprocessing.StandardScaler().fit(X_train)
         X_train_scaled = scaler.transform(X_train)
         if self.verbose: print('Scaled data.')
 
+        if self.do_hyperparams:
+            print('Running hyperparameter optimisation.')
+            regr_params = self.opt_hyperparams(X_train_scaled, y_train)
+            if self.verbose: 
+                print('Optimised hyperparameters: ')
+                print(regr_params)
+        else:
+            regr_params = {
+                'hidden_layer_sizes': (200),
+                'alpha': 1e-4,
+                'learning_rate_init': self.nn_learning_rate_init,
+                'max_iter': 1000
+            }
+        regr_params['activation'] = self.nn_activation_function
+        regr_params['solver'] = self.nn_solver
+        regr_params['learning_rate'] = self.nn_learning_rate
+        regr_params['random_state'] = self.random_seed
+
+        print(f'Training {self.nn_ensemble_size} neural networks.')
         regr = []
         for i in range(self.nn_ensemble_size):
             if self.verbose: print(f'Training NN {i+1}...')
             rs = self.random_seed+i if self.random_seed is not None else None
             X, y = shuffle(X_train_scaled, y_train, random_state=rs)
-            regr.append(MLPRegressor(hidden_layer_sizes=(200), activation=self.nn_activation_function,
-                                     solver=self.nn_solver, learning_rate=self.nn_learning_rate,
-                                     learning_rate_init=self.nn_learning_rate_init, max_iter=1000,
-                                     random_state=rs
-                                     ).fit(X, y))
+            regr.append(MLPRegressor(**regr_params).fit(X, y))
 
         if self.verbose: print(f'Saving models to {self.model_out}')
         print('Training complete!\n')
@@ -395,6 +433,7 @@ class ModelTester:
         plt.xlabel(r"True E$_a$ (kcal/mol)", fontsize=16)
         plt.yticks(fontsize=16)
         plt.xticks(fontsize=16)
+        fig.tight_layout()
         if self.plot_dir is not None:
             save_path = os.path.join(self.plot_dir, f'corr_{data_type}.png')
             if not os.path.exists(self.plot_dir): os.mkdir(self.plot_dir)
