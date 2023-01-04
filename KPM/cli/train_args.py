@@ -89,6 +89,10 @@ class CLICommand(SharedArgs):
                             type=int,
                             default=None,
                             help='Number of parallel threads to perform hyperparameter optimisation over.')
+        parser.add_argument('--opt_hyperparams_file',
+                            type=str,
+                            default=None,
+                            help='Path to JSON file containing hyperparameter lists to optimise over.')
         parser.add_argument('--nn_activation_function',
                             type=str,
                             choices=['identity', 'logistic', 'tanh','relu'],
@@ -103,6 +107,19 @@ class CLICommand(SharedArgs):
                             choices=['lbfgs', 'sgd', 'adam'],
                             default='adam',
                             help='The solver to use in neural network weight optimisation.')
+        parser.add_argument('--nn_layers',
+                            type=int,
+                            nargs='+',
+                            default=100,
+                            help='Hidden layer sizes in neural network. Accepts multiple arguments (e.g. \'--nn_layers 100 100\' gives a network with two hidden layers of 100 neaurons each).')
+        parser.add_argument('--nn_alpha',
+                            type=float,
+                            default=1e-4,
+                            help='Strength of neural network L2 regularisation.')
+        parser.add_argument('--nn_max_iters',
+                            type=int,
+                            default=500,
+                            help='Maximum number of iterations in neural network training.')
         parser.add_argument('--nn_learning_rate',
                             type=str,
                             choices=['constant', 'invscaling', 'adaptive'],

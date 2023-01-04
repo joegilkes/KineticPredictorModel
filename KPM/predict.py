@@ -244,7 +244,7 @@ class ModelPredictor:
             Eact_pred[:, i] = pred
 
         Eacts = np.mean(Eact_pred, axis=1)
-        uncerts = np.var(Eact_pred, axis=1)
+        uncerts = np.std(Eact_pred, axis=1)
 
         if self.outfile is not None:
             output = [

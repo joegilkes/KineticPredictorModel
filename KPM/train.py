@@ -17,6 +17,7 @@ from sklearn.utils import shuffle
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import json
 
 from numpy.typing import ArrayLike
 
@@ -57,9 +58,13 @@ class ModelTrainer:
         self.plot_dir = args.plot_dir
         self.do_hyperparams = True if args.opt_hyperparams == 'True' else False
         self.hyperparam_jobs = args.opt_hyperparams_jobs
+        self.hyperparam_file = args.opt_hyperparams_file
         self.nn_activation_function = args.nn_activation_function
         self.nn_ensemble_size = args.nn_ensemble_size
         self.nn_solver = args.nn_solver
+        self.nn_layers = [args.nn_layers] if type(args.nn_layers) == int else args.nn_layers
+        self.nn_alpha = args.nn_alpha
+        self.nn_max_iters = args.nn_max_iters
         self.nn_learning_rate = args.nn_learning_rate
         self.nn_learning_rate_init = args.nn_learning_rate_init
         self.nn_learning_rate_max = args.nn_learning_rate_max # Not used yet, doesn't look like this is an option.
@@ -81,6 +86,18 @@ class ModelTrainer:
         # Modify number of reactions based on train_direction.
         if self.train_direction == 'both':
             self.num_reacs = 2*self.num_reacs
+
+        # Set up the neural network hyperparameter dictionary.
+        self.nn_params = {
+            'hidden_layer_sizes': self.nn_layers,
+            'activation': self.nn_activation_function,
+            'solver': self.nn_solver,
+            'alpha': self.nn_alpha,
+            'learning_rate': self.nn_learning_rate,
+            'learning_rate_init': self.nn_learning_rate_init,
+            'max_iter': self.nn_max_iters,
+            'random_state': self.random_seed
+        }
 
 
     def process(self):
@@ -111,7 +128,7 @@ class ModelTrainer:
                                self.morgan_radius, self.morgan_num_bits)
 
             print('Fingerprint calculation complete.')
-            if self.verbose: print(f'\nSplitting train/test data by {self.split_method}.')
+            if self.verbose: print(f'\nSplitting train/test data.')
 
             # Split data into train/test sets.
             X_train, X_test, y_train, y_test = split_data('train_test_split', diffs, Eact, self.split_ratio,
@@ -181,13 +198,24 @@ class ModelTrainer:
             X_train: Array of reaction difference fingerprints.
             y_train: Array of normalised activation energies.
         '''
-        est = MLPRegressor(random_state=self.random_seed)
-        param_grid = {
-            'hidden_layer_sizes': [(100), (200), (300), (100, 100), (200, 200)],
-            'alpha': [1e-5, 1e-4, 1e-3],
-            'learning_rate_init': [1e-4, 1e-3, 1e-2],
-            'max_iter': [200, 500, 1000]
-        }
+        if self.hyperparam_file is None:
+            # Search over a default parameter space.
+            param_grid = {
+                'hidden_layer_sizes': [(100,), (200,), (300,), (100, 100,), (200, 200,)],
+                'alpha': [1e-5, 1e-4, 1e-3],
+                'learning_rate_init': [1e-4, 1e-3, 1e-2],
+                'max_iter': [200, 500, 1000]
+            }
+        else:
+            with open(self.hyperparam_file, 'r') as f:
+                param_grid = json.load(f)
+
+        search_keys = param_grid.keys()
+        for key in search_keys:
+            if key in self.nn_params.keys():
+                self.nn_params.pop(key)
+
+        est = MLPRegressor(**self.nn_params)
         cv = KFold(4)
         gs = GridSearchCV(est, param_grid, cv=cv, n_jobs=self.hyperparam_jobs, verbose=3)
         gs.fit(X_train, y_train)
@@ -208,21 +236,13 @@ class ModelTrainer:
 
         if self.do_hyperparams:
             print('Running hyperparameter optimisation.')
+            # Note that this removes all keys being optimised from `self.nn_params`
             regr_params = self.opt_hyperparams(X_train_scaled, y_train)
             if self.verbose: 
                 print('Optimised hyperparameters: ')
                 print(regr_params)
-        else:
-            regr_params = {
-                'hidden_layer_sizes': (200),
-                'alpha': 1e-4,
-                'learning_rate_init': self.nn_learning_rate_init,
-                'max_iter': 1000
-            }
-        regr_params['activation'] = self.nn_activation_function
-        regr_params['solver'] = self.nn_solver
-        regr_params['learning_rate'] = self.nn_learning_rate
-        regr_params['random_state'] = self.random_seed
+            # Re-add the optimised hyperparameters.
+            self.nn_params = {**self.nn_params, **regr_params}
 
         print(f'Training {self.nn_ensemble_size} neural networks.')
         regr = []
@@ -230,7 +250,8 @@ class ModelTrainer:
             if self.verbose: print(f'Training NN {i+1}...')
             rs = self.random_seed+i if self.random_seed is not None else None
             X, y = shuffle(X_train_scaled, y_train, random_state=rs)
-            regr.append(MLPRegressor(**regr_params).fit(X, y))
+            self.nn_params['random_state'] = rs
+            regr.append(MLPRegressor(**self.nn_params).fit(X, y))
 
         if self.verbose: print(f'Saving models to {self.model_out}')
         print('Training complete!\n')
@@ -380,7 +401,7 @@ class ModelTester:
             if self.verbose: print(f'NN{i} R2 = {r2}')
 
         Eacts = np.mean(Eact_pred, axis=1)
-        uncerts = np.var(Eact_pred, axis=1)
+        uncerts = np.std(Eact_pred, axis=1)
         if self.verbose: print(f'Average R2 = {np.mean(r2s)}')
 
         # Save predictions if requested.
