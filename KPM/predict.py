@@ -84,6 +84,7 @@ class ModelPredictor:
         self.nn_ensemble_size = args.nn_ensemble_size
         self.descriptor_type = args.descriptor_type
         self.norm_type = args.norm_type
+        self.norm_eacts = True if args.norm_eacts == 'True' else False
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
 
@@ -240,7 +241,8 @@ class ModelPredictor:
         Eact_pred = np.zeros((n_reacs_adj, self.nn_ensemble_size))
         for i in range(self.nn_ensemble_size):
             pred = self.regr[i].predict(diffs)
-            pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
+            if self.norm_eacts:
+                pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
             Eact_pred[:, i] = pred
 
         Eacts = np.mean(Eact_pred, axis=1)

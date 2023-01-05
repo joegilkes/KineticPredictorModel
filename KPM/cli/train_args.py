@@ -44,6 +44,11 @@ class CLICommand(SharedArgs):
                             choices=['Zscore', 'none', 'shift'],
                             default='Zscore',
                             help='Data normalisation type.')
+        parser.add_argument('--norm_eacts',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether to normalise the activation energies in the training set before training.')
         parser.add_argument('--split_method',
                             type=str,
                             choices=['cv','train_test_split','ShuffleSplit','manualSplit'],
@@ -111,7 +116,7 @@ class CLICommand(SharedArgs):
                             type=int,
                             nargs='+',
                             default=100,
-                            help='Hidden layer sizes in neural network. Accepts multiple arguments (e.g. \'--nn_layers 100 100\' gives a network with two hidden layers of 100 neaurons each).')
+                            help='Hidden layer sizes in neural network. Accepts multiple arguments (e.g. \'--nn_layers 100 100\' gives a network with two hidden layers of 100 neurons each).')
         parser.add_argument('--nn_alpha',
                             type=float,
                             default=1e-4,
@@ -133,6 +138,11 @@ class CLICommand(SharedArgs):
                             type=float,
                             default=1e-2,
                             help='The maximum neural network learning rate.')
+        parser.add_argument('--nn_out_activation',
+                            type=str,
+                            choices=['identity', 'logistic', 'tanh', 'relu'],
+                            default='identity',
+                            help='The activation function for the neural network\'s output layer')
 
         # Featurisation optional arguments
         parser.add_argument('--descriptor_type',

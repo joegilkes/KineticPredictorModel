@@ -48,6 +48,7 @@ class ModelTrainer:
         self.separate_test_dataset = args.separate_test_dataset
         self.separate_train_dataset = args.separate_train_dataset
         self.norm_type = args.norm_type
+        self.norm_eacts = True if args.norm_eacts == 'True' else False
         self.split_method = args.split_method
         self.split_ratio = args.split_ratio
         self.split_num = args.split_num
@@ -67,6 +68,7 @@ class ModelTrainer:
         self.nn_max_iters = args.nn_max_iters
         self.nn_learning_rate = args.nn_learning_rate
         self.nn_learning_rate_init = args.nn_learning_rate_init
+        self.nn_out_activation = args.nn_out_activation
         self.nn_learning_rate_max = args.nn_learning_rate_max # Not used yet, doesn't look like this is an option.
         self.descriptor_type = args.descriptor_type # Only MorganF currently implemented.
         self.similarity_type = args.similarity_type # Not used yet.
@@ -119,7 +121,8 @@ class ModelTrainer:
 
             # Normalise Eact.
             std_Eact = np.std(Eact)
-            Eact = normalise(Eact, avg_Eact, std_Eact, self.norm_type)
+            if self.norm_eacts:
+                Eact = normalise(Eact, avg_Eact, std_Eact, self.norm_type)
 
             if self.verbose: print('Data sorted. Calculating reaction difference fingerprints.')
 
@@ -162,8 +165,9 @@ class ModelTrainer:
 
             # Normalise Eact from training data.
             std_Eact = np.std(Eact_train)
-            Eact_train = normalise(Eact_train, avg_Eact, std_Eact, self.norm_type)
-            Eact_test = normalise(Eact_test, avg_Eact, std_Eact, self.norm_type)
+            if self.norm_eacts:
+                Eact_train = normalise(Eact_train, avg_Eact, std_Eact, self.norm_type)
+                Eact_test = normalise(Eact_test, avg_Eact, std_Eact, self.norm_type)
 
             if self.verbose: print('Data sorted. Calculating reaction difference fingerprints.')
 
@@ -251,7 +255,9 @@ class ModelTrainer:
             rs = self.random_seed+i if self.random_seed is not None else None
             X, y = shuffle(X_train_scaled, y_train, random_state=rs)
             self.nn_params['random_state'] = rs
-            regr.append(MLPRegressor(**self.nn_params).fit(X, y))
+            nn = MLPRegressor(**self.nn_params)
+            nn.out_activation_ = self.nn_out_activation
+            regr.append(nn.fit(X, y))
 
         if self.verbose: print(f'Saving models to {self.model_out}')
         print('Training complete!\n')
@@ -296,6 +302,7 @@ class ModelTester:
         self.separate_test_dataset = args.separate_test_dataset
         self.separate_train_dataset = args.separate_train_dataset
         self.norm_type = args.norm_type
+        self.norm_eacts = True if args.norm_eacts == 'True' else False
         self.split_method = args.split_method
         self.split_ratio = args.split_ratio
         self.split_num = args.split_num
@@ -394,7 +401,9 @@ class ModelTester:
         r2s = np.zeros(self.nn_ensemble_size)
         for i in range(self.nn_ensemble_size):
             pred = self.regr[i].predict(X)
-            pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
+            # Reverse normalisation if Eacts were normalised in training.
+            if self.norm_eacts:
+                pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
             Eact_pred[:, i] = pred
             r2 = self.regr[i].score(X, y)
             r2s[i] = r2
@@ -430,8 +439,9 @@ class ModelTester:
 
         print(f'Analysis on {data_type}ing data prediction:')
 
-        # Un-normalise true data.
-        y_true = un_normalise(y_true, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
+        # Un-normalise true data if it was normalised in training.
+        if self.norm_eacts:
+            y_true = un_normalise(y_true, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
         
         # Calculate error metrics.
         mse = mean_squared_error(y_true, y_pred)
