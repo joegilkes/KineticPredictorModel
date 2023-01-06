@@ -260,7 +260,7 @@ class ModelPredictor:
 
         def uncert_str(i):
             if self.do_uncertainty:
-                return f' += {uncerts[i]}'
+                return f' ± {uncerts[i]}'
             else:
                 return ''
 
