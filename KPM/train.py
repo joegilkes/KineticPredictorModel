@@ -255,9 +255,16 @@ class ModelTrainer:
             rs = self.random_seed+i if self.random_seed is not None else None
             X, y = shuffle(X_train_scaled, y_train, random_state=rs)
             self.nn_params['random_state'] = rs
-            nn = MLPRegressor(**self.nn_params)
-            nn.out_activation_ = self.nn_out_activation
-            regr.append(nn.fit(X, y))
+            if self.nn_out_activation != 'identity':
+                # This trick is required to bypass the initializer, which enforces identity.
+                self.nn_params['warm_start'] = True
+                nn = MLPRegressor(**self.nn_params)
+                nn.partial_fit(X, y)
+                nn.out_activation_ = self.nn_out_activation
+                regr.append(nn.fit(X, y))
+            else:
+                nn = MLPRegressor(**self.nn_params)
+                regr.append(nn.fit(X, y))
 
         if self.verbose: print(f'Saving models to {self.model_out}')
         print('Training complete!\n')
