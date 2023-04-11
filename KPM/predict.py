@@ -4,9 +4,16 @@ Used to predict activation energy (Eact) of reactions
 from existing KPM-trained models.
 '''
 
+OBCR_enabled = True
+try:
+    from obcr import fix_radicals
+    from obcr.utils import pbmol_to_smi, is_radical
+except ImportError:
+    OBCR_enabled = False
+
 import numpy as np
 from openbabel import pybel
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from KPM.utils.descriptors import calc_diffs
 from KPM.utils.data_funcs import un_normalise
 
@@ -42,7 +49,24 @@ class ModelPredictor:
         self.enthalpy = args.enthalpy
         self.outfile = args.outfile
         self.direction = args.direction
+        self.do_uncertainty = True if args.uncertainty == 'True' else False
         self.verbose = True if args.verbose == 'True' else False
+
+        if args.fix_radicals == 'True':
+            if not OBCR_enabled:
+                _errstr = (
+                    'Argument \'--fix_radicals\' requires OBCanonicalRadicals to be installed.\n'
+                    'Follow the installation instructions for obtaining and installing the submodule.'  
+                )
+                raise ModuleNotFoundError(_errstr)
+            else:
+                print('Canonical radical structure fixing via OBCanonicalRadicals is enabled.')
+                self.fix_radicals = True
+        else:
+            self.fix_radicals = False
+
+        if args.suppress_rdlogs == 'True':
+            RDLogger.DisableLog('rdApp.*')
 
         if self.outfile is not None:
             print(f'Prediction output will be saved to {self.outfile}')
@@ -60,10 +84,51 @@ class ModelPredictor:
         self.nn_ensemble_size = args.nn_ensemble_size
         self.descriptor_type = args.descriptor_type
         self.norm_type = args.norm_type
+        self.norm_eacts = True if args.norm_eacts == 'True' else False
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
 
+        if self.do_uncertainty and self.nn_ensemble_size == 1:
+            raise ValueError('Prediction uncertainty cannot be calculated with only a single model in the ensemble.')
+
         print('--------------------------------------------\n')
+
+
+    def fix_radical_list(self, smi_list, pbmol_list):
+        '''Fix a list of SMILES stings with OBCanonicalRadicals.
+
+        Iterates through a list of input `pybel.Molecule`s and
+        their respective SMILES strings, separating any fragment
+        species. Cleans up/canonicalises the radical structure of
+        and relevant species, then combines them back into a single
+        SMILES and returns.
+        '''
+        final_smi_list = []
+        for smi, pbmol in zip(smi_list, pbmol_list):
+            species_list = [pybel.Molecule(obmol) for obmol in pbmol.OBMol.Separate()]
+
+            smi_list = []
+            for species in species_list:
+                spec_smi = pbmol_to_smi(species)
+                if is_radical(spec_smi):
+                    print(f'Initial species SMILES: {spec_smi}')
+                    species = fix_radicals(species)
+                    # Force re-parsing of structure to ensure aromaticity is detected.
+                    species.addh()
+                    spec_smi = pbmol_to_smi(species)
+                    print(f'Final species SMILES: {spec_smi}')
+                    smi_list.append(spec_smi)
+                else:
+                    smi_list.append(spec_smi)
+
+            if len(smi_list) == 1:
+                final_smi = smi_list[0]
+            else:
+                final_smi = '.'.join(smi_list)
+
+            final_smi_list.append(final_smi)
+
+        return final_smi_list
 
 
     def get_smiles_from_xyz(self):
@@ -92,9 +157,15 @@ class ModelPredictor:
             except StopIteration:
                 gen_stat = False
 
+
         # These functions return the SMILES followed by the xyz file path, hence the split/strip.
         rsmi = [mol.write('can').split()[0].strip() for mol in rmol]
         psmi = [mol.write('can').split()[0].strip() for mol in pmol]
+
+        # Tidy up weird radical structures so all radicals are consistent, if requested.
+        if self.fix_radicals:
+            rsmi = self.fix_radical_list(rsmi, rmol)
+            psmi = self.fix_radical_list(psmi, pmol)
 
         return rsmi, psmi
 
@@ -167,13 +238,15 @@ class ModelPredictor:
 
         if self.verbose: print(f'Predicting activation energies over {self.nn_ensemble_size} NNs.')
         n_reacs_adj = self.num_reacs if self.direction != 'both' else self.num_reacs*2
-        Eact_pred = np.zeros(n_reacs_adj)
+        Eact_pred = np.zeros((n_reacs_adj, self.nn_ensemble_size))
         for i in range(self.nn_ensemble_size):
             pred = self.regr[i].predict(diffs)
-            pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
-            Eact_pred += pred
+            if self.norm_eacts:
+                pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
+            Eact_pred[:, i] = pred
 
-        Eact_pred = Eact_pred / self.nn_ensemble_size
+        Eacts = np.mean(Eact_pred, axis=1)
+        uncerts = np.std(Eact_pred, axis=1)
 
         if self.outfile is not None:
             output = [
@@ -185,9 +258,15 @@ class ModelPredictor:
             with open(self.outfile, 'w') as f:
                 f.writelines('\n'.join(output))
 
+        def uncert_str(i):
+            if self.do_uncertainty:
+                return f' ± {uncerts[i]}'
+            else:
+                return ''
+
         for i in range(self.num_reacs):
             if self.direction == 'forward':
-                print(f'Reaction {i+1}: Predicted Eact = {Eact_pred[i]} kcal/mol')
+                print(f'Reaction {i+1}: Predicted Eact = {Eacts[i]}{uncert_str(i)} kcal/mol')
                 if self.outfile is not None:
 
                     output = [
@@ -196,14 +275,14 @@ class ModelPredictor:
                         f'# Product SMILES: {self.psmi[i]}',
                         f'# dH: {self.dH_arr[i]} kcal/mol',
                         f'# Eact prediction (in kcal/mol) follows:',
-                        f'{Eact_pred[i]}',
+                        f'{Eacts[i]}{uncert_str(i)}',
                         '\n'
                     ]
                     with open(self.outfile, 'a') as f:
                         f.writelines('\n'.join(output))
 
             elif self.direction == 'backward':
-                print(f'Backward Reaction {i+1}: Predicted Eact = {Eact_pred[i]} kcal/mol')
+                print(f'Backward Reaction {i+1}: Predicted Eact = {Eacts[i]}{uncert_str(i)} kcal/mol')
                 if self.outfile is not None:
 
                     output = [
@@ -212,14 +291,14 @@ class ModelPredictor:
                         f'# Product SMILES: {self.psmi[i]}',
                         f'# dH: {self.dH_arr[i]} kcal/mol',
                         f'# Eact prediction (in kcal/mol) follows:',
-                        f'{Eact_pred[i]}',
+                        f'{Eacts[i]}{uncert_str(i)}',
                         '\n'
                     ]
                     with open(self.outfile, 'a') as f:
                         f.writelines('\n'.join(output))
 
             elif self.direction == 'both':
-                print(f'Forward Reaction {i+1}: Predicted Eact = {Eact_pred[2*i]} kcal/mol')
+                print(f'Forward Reaction {i+1}: Predicted Eact = {Eacts[2*i]}{uncert_str(2*i)} kcal/mol')
                 if self.outfile is not None:
 
                     output = [
@@ -228,13 +307,13 @@ class ModelPredictor:
                         f'# Product SMILES: {self.psmi[2*i]}',
                         f'# dH: {self.dH_arr[2*i]} kcal/mol',
                         f'# Eact prediction (in kcal/mol) follows:',
-                        f'{Eact_pred[2*i]}',
+                        f'{Eacts[2*i]}{uncert_str(2*i)}',
                         '\n'
                     ]
                     with open(self.outfile, 'a') as f:
                         f.writelines('\n'.join(output))
 
-                print(f'Backward Reaction {i+1}: Predicted Eact = {Eact_pred[2*i+1]} kcal/mol')
+                print(f'Backward Reaction {i+1}: Predicted Eact = {Eacts[2*i+1]}{uncert_str(2*i+1)} kcal/mol')
                 if self.outfile is not None:
 
                     output = [
@@ -243,7 +322,7 @@ class ModelPredictor:
                         f'# Product SMILES: {self.psmi[2*i+1]}',
                         f'# dH: {self.dH_arr[2*i+1]} kcal/mol',
                         f'# Eact prediction (in kcal/mol) follows:',
-                        f'{Eact_pred[2*i+1]}',
+                        f'{Eacts[2*i+1]}{uncert_str(2*i+1)}',
                         '\n'
                     ]
                     with open(self.outfile, 'a') as f:

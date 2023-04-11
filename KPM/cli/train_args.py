@@ -44,6 +44,11 @@ class CLICommand(SharedArgs):
                             choices=['Zscore', 'none', 'shift'],
                             default='Zscore',
                             help='Data normalisation type.')
+        parser.add_argument('--norm_eacts',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether to normalise the activation energies in the training set before training.')
         parser.add_argument('--split_method',
                             type=str,
                             choices=['cv','train_test_split','ShuffleSplit','manualSplit'],
@@ -80,6 +85,19 @@ class CLICommand(SharedArgs):
 
         # Neural network optional arguments
         # See https://scikit-learn.org/stable/modules/generated/sklearn.neural_network.MLPClassifier.html for full info.
+        parser.add_argument('--opt_hyperparams',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether to perform a grid search for optimal neural network hyperparameters.')
+        parser.add_argument('--opt_hyperparams_jobs',
+                            type=int,
+                            default=None,
+                            help='Number of parallel threads to perform hyperparameter optimisation over.')
+        parser.add_argument('--opt_hyperparams_file',
+                            type=str,
+                            default=None,
+                            help='Path to JSON file containing hyperparameter lists to optimise over.')
         parser.add_argument('--nn_activation_function',
                             type=str,
                             choices=['identity', 'logistic', 'tanh','relu'],
@@ -94,6 +112,19 @@ class CLICommand(SharedArgs):
                             choices=['lbfgs', 'sgd', 'adam'],
                             default='adam',
                             help='The solver to use in neural network weight optimisation.')
+        parser.add_argument('--nn_layers',
+                            type=int,
+                            nargs='+',
+                            default=100,
+                            help='Hidden layer sizes in neural network. Accepts multiple arguments (e.g. \'--nn_layers 100 100\' gives a network with two hidden layers of 100 neurons each).')
+        parser.add_argument('--nn_alpha',
+                            type=float,
+                            default=1e-4,
+                            help='Strength of neural network L2 regularisation.')
+        parser.add_argument('--nn_max_iters',
+                            type=int,
+                            default=500,
+                            help='Maximum number of iterations in neural network training.')
         parser.add_argument('--nn_learning_rate',
                             type=str,
                             choices=['constant', 'invscaling', 'adaptive'],
@@ -107,6 +138,11 @@ class CLICommand(SharedArgs):
                             type=float,
                             default=1e-2,
                             help='The maximum neural network learning rate.')
+        parser.add_argument('--nn_out_activation',
+                            type=str,
+                            choices=['identity', 'logistic', 'tanh', 'relu'],
+                            default='identity',
+                            help='The activation function for the neural network\'s output layer')
 
         # Featurisation optional arguments
         parser.add_argument('--descriptor_type',
@@ -146,11 +182,11 @@ class CLICommand(SharedArgs):
         # Test model on both training and testing data.
         tester = ModelTester(args.model_out)
 
-        Eact_pred_train = tester.predict(X_train, y_train, 'train')
-        tester.plot_correlation(y_train, Eact_pred_train, 'train')
+        Eact_pred_train, Eact_uncert_train = tester.predict(X_train, y_train, 'train')
+        tester.plot_correlation(y_train, Eact_pred_train, Eact_uncert_train, 'train')
 
-        Eact_pred_test = tester.predict(X_test, y_test, 'test')
-        tester.plot_correlation(y_test, Eact_pred_test, 'test')
+        Eact_pred_test, Eact_uncert_test = tester.predict(X_test, y_test, 'test')
+        tester.plot_correlation(y_test, Eact_pred_test, Eact_uncert_test, 'test')
 
         print('KPM finished.')
         input('Press ENTER to close.')

@@ -10,11 +10,14 @@ from KPM.utils.descriptors import calc_diffs
 
 from sklearn import preprocessing
 from sklearn.neural_network import MLPRegressor
+from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.utils import shuffle
 
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import json
 
 from numpy.typing import ArrayLike
 
@@ -45,6 +48,7 @@ class ModelTrainer:
         self.separate_test_dataset = args.separate_test_dataset
         self.separate_train_dataset = args.separate_train_dataset
         self.norm_type = args.norm_type
+        self.norm_eacts = True if args.norm_eacts == 'True' else False
         self.split_method = args.split_method
         self.split_ratio = args.split_ratio
         self.split_num = args.split_num
@@ -53,11 +57,18 @@ class ModelTrainer:
         self.training_prediction_dir = args.training_prediction_dir
         self.save_test_train_path = args.save_test_train_path
         self.plot_dir = args.plot_dir
+        self.do_hyperparams = True if args.opt_hyperparams == 'True' else False
+        self.hyperparam_jobs = args.opt_hyperparams_jobs
+        self.hyperparam_file = args.opt_hyperparams_file
         self.nn_activation_function = args.nn_activation_function
         self.nn_ensemble_size = args.nn_ensemble_size
         self.nn_solver = args.nn_solver
+        self.nn_layers = [args.nn_layers] if type(args.nn_layers) == int else args.nn_layers
+        self.nn_alpha = args.nn_alpha
+        self.nn_max_iters = args.nn_max_iters
         self.nn_learning_rate = args.nn_learning_rate
         self.nn_learning_rate_init = args.nn_learning_rate_init
+        self.nn_out_activation = args.nn_out_activation
         self.nn_learning_rate_max = args.nn_learning_rate_max # Not used yet, doesn't look like this is an option.
         self.descriptor_type = args.descriptor_type # Only MorganF currently implemented.
         self.similarity_type = args.similarity_type # Not used yet.
@@ -77,6 +88,18 @@ class ModelTrainer:
         # Modify number of reactions based on train_direction.
         if self.train_direction == 'both':
             self.num_reacs = 2*self.num_reacs
+
+        # Set up the neural network hyperparameter dictionary.
+        self.nn_params = {
+            'hidden_layer_sizes': self.nn_layers,
+            'activation': self.nn_activation_function,
+            'solver': self.nn_solver,
+            'alpha': self.nn_alpha,
+            'learning_rate': self.nn_learning_rate,
+            'learning_rate_init': self.nn_learning_rate_init,
+            'max_iter': self.nn_max_iters,
+            'random_state': self.random_seed
+        }
 
 
     def process(self):
@@ -98,7 +121,8 @@ class ModelTrainer:
 
             # Normalise Eact.
             std_Eact = np.std(Eact)
-            Eact = normalise(Eact, avg_Eact, std_Eact, self.norm_type)
+            if self.norm_eacts:
+                Eact = normalise(Eact, avg_Eact, std_Eact, self.norm_type)
 
             if self.verbose: print('Data sorted. Calculating reaction difference fingerprints.')
 
@@ -107,12 +131,12 @@ class ModelTrainer:
                                self.morgan_radius, self.morgan_num_bits)
 
             print('Fingerprint calculation complete.')
-            if self.verbose: print(f'\nSplitting train/test data by {self.split_method}.')
+            if self.verbose: print(f'\nSplitting train/test data.')
 
             # Split data into train/test sets.
-            X_train, X_test, y_train, y_test = split_data(self.split_method, diffs, Eact, self.split_ratio,
-                                                          self.random_seed, self.split_num, self.split_index_path,
-                                                          self.verbose)
+            X_train, X_test, y_train, y_test = split_data('train_test_split', diffs, Eact, self.split_ratio,
+                                                          self.random_seed, index_path=self.split_index_path,
+                                                          verbose=self.verbose)
         # Else if loading separate train/test datasets...
         else:
             print('Taking train/test data from separate datasets.')
@@ -141,8 +165,9 @@ class ModelTrainer:
 
             # Normalise Eact from training data.
             std_Eact = np.std(Eact_train)
-            Eact_train = normalise(Eact_train, avg_Eact, std_Eact, self.norm_type)
-            Eact_test = normalise(Eact_test, avg_Eact, std_Eact, self.norm_type)
+            if self.norm_eacts:
+                Eact_train = normalise(Eact_train, avg_Eact, std_Eact, self.norm_type)
+                Eact_test = normalise(Eact_test, avg_Eact, std_Eact, self.norm_type)
 
             if self.verbose: print('Data sorted. Calculating reaction difference fingerprints.')
 
@@ -170,6 +195,38 @@ class ModelTrainer:
         return X_train, X_test, y_train, y_test
 
 
+    def opt_hyperparams(self, X_train: ArrayLike, y_train: ArrayLike):
+        '''Optimises hyperparameters of an MLPRegressor.
+
+        Arguments:
+            X_train: Array of reaction difference fingerprints.
+            y_train: Array of normalised activation energies.
+        '''
+        if self.hyperparam_file is None:
+            # Search over a default parameter space.
+            param_grid = {
+                'hidden_layer_sizes': [(100,), (200,), (300,), (100, 100,), (200, 200,)],
+                'alpha': [1e-5, 1e-4, 1e-3],
+                'learning_rate_init': [1e-4, 1e-3, 1e-2],
+                'max_iter': [200, 500, 1000]
+            }
+        else:
+            with open(self.hyperparam_file, 'r') as f:
+                param_grid = json.load(f)
+
+        search_keys = param_grid.keys()
+        for key in search_keys:
+            if key in self.nn_params.keys():
+                self.nn_params.pop(key)
+
+        est = MLPRegressor(**self.nn_params)
+        cv = KFold(4)
+        gs = GridSearchCV(est, param_grid, cv=cv, n_jobs=self.hyperparam_jobs, verbose=3)
+        gs.fit(X_train, y_train)
+        
+        return gs.best_params_
+
+
     def run(self, X_train: ArrayLike, y_train: ArrayLike):
         '''Runs the model training procedure.
         
@@ -177,19 +234,30 @@ class ModelTrainer:
             X_train: Array of reaction difference fingerprints.
             y_train: Array of normalised activation energies.
         '''
-        print(f'Training {self.nn_ensemble_size} neural networks.')
         scaler = preprocessing.StandardScaler().fit(X_train)
         X_train_scaled = scaler.transform(X_train)
         if self.verbose: print('Scaled data.')
 
+        if self.do_hyperparams:
+            print('Running hyperparameter optimisation.')
+            # Note that this removes all keys being optimised from `self.nn_params`
+            regr_params = self.opt_hyperparams(X_train_scaled, y_train)
+            if self.verbose: 
+                print('Optimised hyperparameters: ')
+                print(regr_params)
+            # Re-add the optimised hyperparameters.
+            self.nn_params = {**self.nn_params, **regr_params}
+
+        print(f'Training {self.nn_ensemble_size} neural networks.')
         regr = []
         for i in range(self.nn_ensemble_size):
             if self.verbose: print(f'Training NN {i+1}...')
-            regr.append(MLPRegressor(hidden_layer_sizes=(200), activation=self.nn_activation_function,
-                                     solver=self.nn_solver, learning_rate=self.nn_learning_rate,
-                                     learning_rate_init=self.nn_learning_rate_init, max_iter=1000,
-                                     random_state=self.random_seed
-                                     ).fit(X_train_scaled, y_train))
+            rs = self.random_seed+i if self.random_seed is not None else None
+            X, y = shuffle(X_train_scaled, y_train, random_state=rs)
+            self.nn_params['random_state'] = rs
+            nn = MLPRegressor(**self.nn_params)
+            nn.out_activation_ = self.nn_out_activation
+            regr.append(nn.fit(X, y))
 
         if self.verbose: print(f'Saving models to {self.model_out}')
         print('Training complete!\n')
@@ -234,6 +302,7 @@ class ModelTester:
         self.separate_test_dataset = args.separate_test_dataset
         self.separate_train_dataset = args.separate_train_dataset
         self.norm_type = args.norm_type
+        self.norm_eacts = True if args.norm_eacts == 'True' else False
         self.split_method = args.split_method
         self.split_ratio = args.split_ratio
         self.split_num = args.split_num
@@ -328,29 +397,32 @@ class ModelTester:
         n_reacs = len(X)
         X = self.scaler.transform(X)
 
-        Eact_pred = np.zeros(n_reacs)
+        Eact_pred = np.zeros((n_reacs, self.nn_ensemble_size))
         r2s = np.zeros(self.nn_ensemble_size)
         for i in range(self.nn_ensemble_size):
             pred = self.regr[i].predict(X)
-            pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
-            Eact_pred += pred
+            # Reverse normalisation if Eacts were normalised in training.
+            if self.norm_eacts:
+                pred = un_normalise(pred, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
+            Eact_pred[:, i] = pred
             r2 = self.regr[i].score(X, y)
             r2s[i] = r2
             if self.verbose: print(f'NN{i} R2 = {r2}')
 
-        Eact_pred = Eact_pred / self.nn_ensemble_size
+        Eacts = np.mean(Eact_pred, axis=1)
+        uncerts = np.std(Eact_pred, axis=1)
         if self.verbose: print(f'Average R2 = {np.mean(r2s)}')
 
         # Save predictions if requested.
         if self.training_prediction_dir is not None:
             save_path = os.path.join(self.training_prediction_dir, f'Eact_pred_{data_type}.npz')
-            np.savez(save_path, Eact_pred=Eact_pred)
+            np.savez(save_path, Eacts=Eacts, uncerts=uncerts)
             if self.verbose: print(f'Predictions saved to {save_path}\n')
 
-        return Eact_pred
+        return Eacts, uncerts
 
     
-    def plot_correlation(self, y_true: ArrayLike, y_pred: ArrayLike, data_type: str):
+    def plot_correlation(self, y_true: ArrayLike, y_pred: ArrayLike, y_uncert: ArrayLike, data_type: str):
         '''Use the loaded model to plot correlation between predicted and actual Eact values.
         
         Generic function to plot correlation plots for either training or
@@ -359,6 +431,7 @@ class ModelTester:
         Arguments:
             y_true: Actual Eact values for reactions in dataset.
             y_pred: Predicted Eact values for reactions in dataset.
+            y_uncert: Uncertainties in predicted Eact values.
             data_type: Either 'train' or 'test', determines plot wording and colours.
         '''
         if data_type not in ['train', 'test']:
@@ -366,8 +439,9 @@ class ModelTester:
 
         print(f'Analysis on {data_type}ing data prediction:')
 
-        # Un-normalise true data.
-        y_true = un_normalise(y_true, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
+        # Un-normalise true data if it was normalised in training.
+        if self.norm_eacts:
+            y_true = un_normalise(y_true, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
         
         # Calculate error metrics.
         mse = mean_squared_error(y_true, y_pred)
@@ -385,11 +459,12 @@ class ModelTester:
 
         fig = plt.figure(fignum, figsize=(8, 6), dpi=100)
         plt.plot(y_true, y_true, color='orange', lw=3)
-        plt.plot(y_pred, y_true, 'o', color=col, mfc='white', markersize=8, mew=2, alpha=0.5)
-        plt.xlabel(r"Predicted E$_a$ (kcal/mol)",fontsize=16)
-        plt.ylabel(r"True E$_a$ (kcal/mol)",fontsize=16)
+        plt.errorbar(y_true, y_pred, yerr=y_uncert, fmt='o', color=col, mfc='white', markersize=8, mew=2, alpha=0.5)
+        plt.ylabel(r"Predicted E$_a$ (kcal/mol)", fontsize=16)
+        plt.xlabel(r"True E$_a$ (kcal/mol)", fontsize=16)
         plt.yticks(fontsize=16)
         plt.xticks(fontsize=16)
+        fig.tight_layout()
         if self.plot_dir is not None:
             save_path = os.path.join(self.plot_dir, f'corr_{data_type}.png')
             if not os.path.exists(self.plot_dir): os.mkdir(self.plot_dir)

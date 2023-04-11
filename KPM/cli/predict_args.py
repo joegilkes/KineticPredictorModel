@@ -38,6 +38,23 @@ class CLICommand(SharedArgs):
                             choices=['forward', 'backward', 'both'],
                             default='forward',
                             help='Reaction direction(s) to predict activation energies for.')
+        parser.add_argument('--uncertainty',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether to also return the uncertainty in each prediction..'
+                            )
+        parser.add_argument('--fix_radicals',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether to use OBCanonicalRadicals to fix and canonicalise OpenBabel\'s radical structure.'
+                            )
+        parser.add_argument('--suppress_rdlogs',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether or not to suppress RDKit\'s output in stderr.')
 
     @staticmethod
     def run(args):
