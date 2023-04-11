@@ -11,6 +11,7 @@ try:
 except ImportError:
     OBCR_enabled = False
 
+from collections import Counter
 import numpy as np
 from openbabel import pybel
 from rdkit import Chem, RDLogger
@@ -94,17 +95,55 @@ class ModelPredictor:
         print('--------------------------------------------\n')
 
 
-    def fix_radical_list(self, smi_list, pbmol_list):
+    def remove_spectators(self, rsmi_list, psmi_list):
+        '''Remove spectator molecules from a list of reactions.
+
+        Iterates through reactant-product system pairs and identifies
+        molecules which are not taking part in any changes in bonding.
+        These will be effectively removed anyway by the subtraction of
+        descriptors, but this greatly speeds up the canonicalisation of
+        radical structures if OBCR is used.
+        '''
+        final_rsmi_list = []
+        final_psmi_list = []
+        for rsmi, psmi in zip(rsmi_list, psmi_list):
+            rsep = Counter(rsmi.split('.'))
+            psep = Counter(psmi.split('.'))
+            # Skip over this reaction if reacs and prods are exactly the same.
+            if rsep == psep:
+                continue
+
+            for reac in rsep:
+                while rsep[reac] > 0:
+                    if reac in psep.keys() and psep[reac] > 0:
+                        rsep[reac] -= 1
+                        psep[reac] -= 1
+                    else:
+                        break
+
+            rsmi_final = '.'.join(['.'.join([r for _ in range(rsep[r])]) for r in rsep if rsep[r] > 0])
+            psmi_final = '.'.join(['.'.join([p for _ in range(psep[p])]) for p in psep if psep[p] > 0])
+            print(rsmi_final, psmi_final)
+            final_rsmi_list.append(rsmi_final)
+            final_psmi_list.append(psmi_final)
+
+        return final_rsmi_list, final_psmi_list
+
+
+    def fix_radical_list(self, smi_list):
         '''Fix a list of SMILES stings with OBCanonicalRadicals.
 
-        Iterates through a list of input `pybel.Molecule`s and
-        their respective SMILES strings, separating any fragment
+        Iterates through a list of input SMILES strings, creating
+        their respective `pybel.Molecule`s and separating any fragment
         species. Cleans up/canonicalises the radical structure of
         and relevant species, then combines them back into a single
         SMILES and returns.
         '''
         final_smi_list = []
-        for smi, pbmol in zip(smi_list, pbmol_list):
+        for smi in smi_list:
+            pbmol = pybel.readstring('smi', smi)
+            pbmol.addh()
+            pbmol.make3D()
             species_list = [pybel.Molecule(obmol) for obmol in pbmol.OBMol.Separate()]
 
             smi_list = []
@@ -157,15 +196,17 @@ class ModelPredictor:
             except StopIteration:
                 gen_stat = False
 
-
         # These functions return the SMILES followed by the xyz file path, hence the split/strip.
         rsmi = [mol.write('can').split()[0].strip() for mol in rmol]
         psmi = [mol.write('can').split()[0].strip() for mol in pmol]
 
+        # Remove non-participating molecules from lists.
+        rsmi, psmi = self.remove_spectators(rsmi, psmi)
+
         # Tidy up weird radical structures so all radicals are consistent, if requested.
         if self.fix_radicals:
-            rsmi = self.fix_radical_list(rsmi, rmol)
-            psmi = self.fix_radical_list(psmi, pmol)
+            rsmi = self.fix_radical_list(rsmi)
+            psmi = self.fix_radical_list(psmi)
 
         return rsmi, psmi
 
