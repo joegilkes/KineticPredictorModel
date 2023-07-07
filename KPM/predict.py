@@ -103,14 +103,19 @@ class ModelPredictor:
         These will be effectively removed anyway by the subtraction of
         descriptors, but this greatly speeds up the canonicalisation of
         radical structures if OBCR is used.
+
+        Returns a mask, indicating any reactions that have been removed 
+        entirely due to no reaction occurring with a 0.
         '''
         final_rsmi_list = []
         final_psmi_list = []
-        for rsmi, psmi in zip(rsmi_list, psmi_list):
+        mask = [True for _ in range(len(rsmi_list))]
+        for i, (rsmi, psmi) in enumerate(zip(rsmi_list, psmi_list)):
             rsep = Counter(rsmi.split('.'))
             psep = Counter(psmi.split('.'))
             # Skip over this reaction if reacs and prods are exactly the same.
             if rsep == psep:
+                mask[i] = False
                 continue
 
             for reac in rsep:
@@ -127,7 +132,7 @@ class ModelPredictor:
             final_rsmi_list.append(rsmi_final)
             final_psmi_list.append(psmi_final)
 
-        return final_rsmi_list, final_psmi_list
+        return final_rsmi_list, final_psmi_list, mask
 
 
     def fix_radical_list(self, smi_list):
@@ -201,20 +206,20 @@ class ModelPredictor:
         psmi = [mol.write('can').split()[0].strip() for mol in pmol]
 
         # Remove non-participating molecules from lists.
-        rsmi, psmi = self.remove_spectators(rsmi, psmi)
+        rsmi, psmi, mask = self.remove_spectators(rsmi, psmi)
 
         # Tidy up weird radical structures so all radicals are consistent, if requested.
         if self.fix_radicals:
             rsmi = self.fix_radical_list(rsmi)
             psmi = self.fix_radical_list(psmi)
 
-        return rsmi, psmi
+        return rsmi, psmi, mask
 
 
     def process_xyzs(self):
         '''Turn reactant/product xyzs into a difference fingerprint.'''
         # Transform xyzs into SMILES.
-        rsmi, psmi = self.get_smiles_from_xyz()
+        rsmi, psmi, mask = self.get_smiles_from_xyz()
         self.rsmi = rsmi
         self.psmi = psmi
 
@@ -224,6 +229,9 @@ class ModelPredictor:
 
         # Load in enthalpies from file.
         self.dH_arr = np.loadtxt(self.enthalpy, ndmin=1)
+
+        # Modify dH array to respect null reactions from mask.
+        self.dH_arr = self.dH_arr[mask]
 
         # Check lengths of array/lists.
         if len(self.dH_arr) != len(rmol) or len(self.dH_arr) != len(pmol):

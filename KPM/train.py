@@ -465,8 +465,12 @@ class ModelTester:
         fignum = 1 if data_type == 'train' else 2
 
         fig = plt.figure(fignum, figsize=(8, 6), dpi=100)
+        ax = plt.gca()
         plt.plot(y_true, y_true, color='orange', lw=3)
         plt.errorbar(y_true, y_pred, yerr=y_uncert, fmt='o', color=col, mfc='white', markersize=8, mew=2, alpha=0.5)
+        plt.text(0.02, 0.98, f'MAE: {mae:.3f} kcal/mol\nRMSE: {rmse:.3f} kcal/mol',
+                 horizontalalignment='left', verticalalignment='top', 
+                 fontsize=16, transform=ax.transAxes)
         plt.ylabel(r"Predicted E$_a$ (kcal/mol)", fontsize=16)
         plt.xlabel(r"True E$_a$ (kcal/mol)", fontsize=16)
         plt.yticks(fontsize=16)
