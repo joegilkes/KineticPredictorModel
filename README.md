@@ -3,6 +3,9 @@
 
 A Python package for training and testing neural networks for the prediction of reaction activation energies. Implemented with a full command line interface (CLI) for ease of use.
 
+![plot](./workflow.png)
+
+
 ## Installation
 
 *KPM* requires a few packages to be installed:
