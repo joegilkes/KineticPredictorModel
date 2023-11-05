@@ -378,3 +378,5 @@ class ModelPredictor:
                         f.writelines('\n'.join(output))
                 
         if self.verbose: print('Output written to file.')
+
+        return Eacts, uncerts
