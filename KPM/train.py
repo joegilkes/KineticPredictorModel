@@ -66,10 +66,13 @@ class ModelTrainer:
         self.nn_layers = [args.nn_layers] if type(args.nn_layers) == int else args.nn_layers
         self.nn_alpha = args.nn_alpha
         self.nn_max_iters = args.nn_max_iters
+        self.nn_n_iter_no_change = args.nn_n_iter_no_change
+        self.nn_tol = args.nn_tol
         self.nn_learning_rate = args.nn_learning_rate
         self.nn_learning_rate_init = args.nn_learning_rate_init
         self.nn_out_activation = args.nn_out_activation
         self.nn_learning_rate_max = args.nn_learning_rate_max # Not used yet, doesn't look like this is an option.
+        self.nn_verbose = True if args.nn_verbose == 'True' else False
         self.descriptor_type = args.descriptor_type # Only MorganF currently implemented.
         self.similarity_type = args.similarity_type # Not used yet.
         self.smiles_type = args.smiles_type # Not used yet.
@@ -98,7 +101,10 @@ class ModelTrainer:
             'learning_rate': self.nn_learning_rate,
             'learning_rate_init': self.nn_learning_rate_init,
             'max_iter': self.nn_max_iters,
-            'random_state': self.random_seed
+            'n_iter_no_change': self.nn_n_iter_no_change,
+            'tol': self.nn_tol,
+            'random_state': self.random_seed,
+            'verbose': self.nn_verbose
         }
 
 

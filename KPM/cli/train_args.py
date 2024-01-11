@@ -125,6 +125,14 @@ class CLICommand(SharedArgs):
                             type=int,
                             default=500,
                             help='Maximum number of iterations in neural network training.')
+        parser.add_argument('--nn_n_iter_no_change',
+                            type=int,
+                            default=10,
+                            help='Maximum number of iterations in neural network training to not meet nn_tol improvement in loss function.')
+        parser.add_argument('--nn_tol',
+                            type=float,
+                            default=1e-4,
+                            help='Tolerance of neural network optimisation.')
         parser.add_argument('--nn_learning_rate',
                             type=str,
                             choices=['constant', 'invscaling', 'adaptive'],
@@ -143,6 +151,11 @@ class CLICommand(SharedArgs):
                             choices=['identity', 'logistic', 'tanh', 'relu'],
                             default='identity',
                             help='The activation function for the neural network\'s output layer')
+        parser.add_argument('--nn_verbose',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='False',
+                            help='Whether to enable verbose output from neural network training.')
 
         # Featurisation optional arguments
         parser.add_argument('--descriptor_type',
