@@ -40,8 +40,8 @@ class CLICommand(SharedArgs):
         tester = ModelTester(args.model, args.dataset, args.num_reacs, args.plot_dir, args.verbose)
 
         X_test, y_test = tester.process_test_data()
-        Eact_pred_test = tester.predict(X_test, y_test, 'test')
-        tester.plot_correlation(y_test, Eact_pred_test, 'test')
+        Eact_pred_test, Eact_uncert_test = tester.predict(X_test, y_test, 'test')
+        tester.plot_correlation(y_test, Eact_pred_test, Eact_uncert_test, 'test')
 
         print('KPM finished.')
         input('Press ENTER to close.')

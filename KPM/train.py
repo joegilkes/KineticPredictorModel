@@ -150,8 +150,8 @@ class ModelTrainer:
             ea_test, dh_test, rs_test, ps_test = load_dataset(self.separate_test_dataset)
 
             # Extract and transform data dependent on train_direction.
-            num_train_reacs = len(ea_train)
-            num_test_reacs = len(ea_test)
+            num_train_reacs = len(ea_train) * (2 if self.train_direction=='both' else 1)
+            num_test_reacs = len(ea_test) * (2 if self.train_direction=='both' else 1)
             Eact_train, dH_train, rmol_train, pmol_train = extract_data(ea_train, dh_train, rs_train, ps_train, 
                                                                         num_train_reacs, self.train_direction)
             Eact_test, dH_test, rmol_test, pmol_test = extract_data(ea_test, dh_test, rs_test, ps_test, 
@@ -376,7 +376,8 @@ class ModelTester:
             print(f'Total number of MOL objects = {len(rmol)}\n')
 
         # Normalise Eact
-        Eact = normalise(Eact, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
+        if self.norm_eacts:
+            Eact = normalise(Eact, self.norm_avg_Eact, self.norm_std_Eact, self.norm_type)
 
         if self.verbose: print('Data loaded. Calculating reaction difference fingerprints.')
 
