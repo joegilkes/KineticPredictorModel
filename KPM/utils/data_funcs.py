@@ -3,6 +3,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 from typing import Tuple
 from rdkit import Chem
+from rdkit.Chem import rdmolfiles
 from sklearn.model_selection import RepeatedKFold, train_test_split, ShuffleSplit
 from sklearn.utils import shuffle
 
@@ -57,31 +58,34 @@ def extract_data(ea: list, dh: list, rs: list, ps: list, num_reacs: int, train_d
     rmol = []
     pmol = []
 
+    smiles_params = rdmolfiles.SmilesParserParams()
+    smiles_params.removeHs = False
+
     # Rework arrays based on train_direction
     if train_direction == 'forward':
         for i in range(num_reacs):
             Eact[i] = ea[i]
             dH[i] = dh[i]
-            rmol.append(Chem.MolFromSmiles(rs[i]))
-            pmol.append(Chem.MolFromSmiles(ps[i]))
+            rmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
+            pmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
     elif train_direction == 'backward':
         for i in range(num_reacs):
             Eact[i] = ea[i] - dh[i]
             dH[i] = -dh[i]
-            rmol.append(Chem.MolFromSmiles(ps[i]))
-            pmol.append(Chem.MolFromSmiles(rs[i]))
+            rmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
+            pmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
     elif train_direction == 'both':
         half_reacs = int(num_reacs/2)
         for i in range(half_reacs):
             Eact[i] = ea[i]
             dH[i] = dh[i]
-            rmol.append(Chem.MolFromSmiles(rs[i]))
-            pmol.append(Chem.MolFromSmiles(ps[i]))
+            rmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
+            pmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
         for i in range(half_reacs):
             Eact[i+half_reacs] = ea[i] - dh[i]
             dH[i+half_reacs] = -dh[i]
-            rmol.append(Chem.MolFromSmiles(ps[i]))
-            pmol.append(Chem.MolFromSmiles(rs[i]))
+            rmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
+            pmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
 
     return Eact, dH, rmol, pmol
 
