@@ -15,7 +15,7 @@ from collections import Counter
 import numpy as np
 from openbabel import pybel
 from rdkit import Chem, RDLogger
-from KPM.utils.descriptors import calc_diffs, calc_natom_features
+from KPM.utils.descriptors import calc_fps, calc_natom_features
 from KPM.utils.data_funcs import un_normalise
 
 
@@ -88,12 +88,18 @@ class ModelPredictor:
         self.norm_eacts = True if args.norm_eacts == 'True' else False
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
+
+        # Newer features with defaults for compatibility with older models.
         if 'use_natom_features' in args._get_args():
             self.use_natom_features = args.use_natom_features
             self.atypes = args.atypes
         else:
             self.use_natom_features = False
             self.atypes = set()
+        if 'descriptor_construction' in args._get_args():
+            self.descriptor_construction = args.descriptor_construction
+        else:
+            self.descriptor_construction = 'diffs'
 
         if self.do_uncertainty and self.nn_ensemble_size == 1:
             raise ValueError('Prediction uncertainty cannot be calculated with only a single model in the ensemble.')
@@ -276,14 +282,12 @@ class ModelPredictor:
         n_reacs_adj = self.num_reacs if self.direction != 'both' else self.num_reacs*2
 
         # Calculate reaction difference fingerprint.
-        diffs = calc_diffs(n_reacs_adj, self.descriptor_type, rmol, pmol, self.dH_arr,
-                          self.morgan_radius, self.morgan_num_bits)
+        fps = calc_fps(n_reacs_adj, self.descriptor_type, self.descriptor_construction,
+                        rmol, pmol, self.dH_arr, self.morgan_radius, self.morgan_num_bits)
         
         if self.use_natom_features:
             nafs = calc_natom_features(n_reacs_adj, rmol, pmol, self.atypes)
-            fps = np.concatenate((diffs, nafs), axis=1)
-        else:
-            fps = diffs
+            fps = np.concatenate((fps, nafs), axis=1)
 
         return fps
 

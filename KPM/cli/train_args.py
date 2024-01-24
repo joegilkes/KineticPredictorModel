@@ -163,6 +163,11 @@ class CLICommand(SharedArgs):
                             choices=['soap', 'mbtr', 'MorganF'],
                             default='MorganF',
                             help='The type of molecular descriptor to train on.')
+        parser.add_argument('--descriptor_construction',
+                            type=str,
+                            choices=['diffs', 'concat', 'diffs+concat'],
+                            default='diffs',
+                            help='The way in which descriptors should be constructed - by subtraction, concatenation, or both.')
         parser.add_argument('--similarity_type',
                             type=str,
                             choices=['tanimoto', 'fraggle'],

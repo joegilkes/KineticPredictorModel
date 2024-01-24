@@ -6,7 +6,7 @@ given molecular datasets.
 
 from KPM.utils.data_funcs import load_dataset, extract_data, split_data
 from KPM.utils.data_funcs import normalise, un_normalise
-from KPM.utils.descriptors import calc_diffs, calc_natom_features, get_atypes
+from KPM.utils.descriptors import calc_fps, calc_natom_features, get_atypes
 
 from sklearn import preprocessing
 from sklearn.neural_network import MLPRegressor
@@ -75,6 +75,7 @@ class ModelTrainer:
         self.nn_learning_rate_max = args.nn_learning_rate_max # Not used yet, doesn't look like this is an option.
         self.nn_verbose = True if args.nn_verbose == 'True' else False
         self.descriptor_type = args.descriptor_type # Only MorganF currently implemented.
+        self.descriptor_construction = args.descriptor_construction
         self.similarity_type = args.similarity_type # Not used yet.
         self.smiles_type = args.smiles_type # Not used yet.
         self.morgan_num_bits = args.morgan_num_bits
@@ -136,14 +137,12 @@ class ModelTrainer:
             if self.verbose: print('Data sorted. Calculating reaction difference fingerprints.')
 
             # Calculate reaction difference fingerprints.
-            diffs = calc_diffs(self.num_reacs, self.descriptor_type, rmol, pmol, dH, 
-                               self.morgan_radius, self.morgan_num_bits)
+            fps = calc_fps(self.num_reacs, self.descriptor_type, self.descriptor_construction,
+                           rmol, pmol, dH, self.morgan_radius, self.morgan_num_bits)
             
             if self.use_natom_features:
                 nafs = calc_natom_features(self.num_reacs, rmol, pmol, self.atypes)
-                fps = np.concatenate((diffs, nafs), axis=1)
-            else:
-                fps = diffs
+                fps = np.concatenate((fps, nafs), axis=1)
 
             print('Fingerprint calculation complete.')
             if self.verbose: print(f'\nSplitting train/test data.')
@@ -192,20 +191,20 @@ class ModelTrainer:
             if self.verbose: print('Data sorted. Calculating reaction difference fingerprints.')
 
             # Calculate reaction difference fingerprints.
-            diffs_train = calc_diffs(num_train_reacs, self.descriptor_type, rmol_train, pmol_train, dH_train,
-                                     self.morgan_radius, self.morgan_num_bits)
-            diffs_test = calc_diffs(num_test_reacs, self.descriptor_type, rmol_test, pmol_test, dH_test,
-                                     self.morgan_radius, self.morgan_num_bits)
+            fps_train = calc_fps(num_train_reacs, self.descriptor_type, self.descriptor_construction,
+                                   rmol_train, pmol_train, dH_train, self.morgan_radius, self.morgan_num_bits)
+            fps_test = calc_fps(num_test_reacs, self.descriptor_type, self.descriptor_construction,
+                                rmol_test, pmol_test, dH_test, self.morgan_radius, self.morgan_num_bits)
             
             if self.use_natom_features:
                 if self.verbose: print('Adding natom-based features.')
                 nafs_train = calc_natom_features(num_train_reacs, rmol_train, pmol_train, self.atypes)
                 nafs_test = calc_natom_features(num_test_reacs, rmol_test, pmol_test, self.atypes)
-                X_train = np.concatenate((diffs_train, nafs_train), axis=1)
-                X_test = np.concatenate((diffs_test, nafs_test), axis=1)
+                X_train = np.concatenate((fps_train, nafs_train), axis=1)
+                X_test = np.concatenate((fps_test, nafs_test), axis=1)
             else:
-                X_train = diffs_train
-                X_test = diffs_test
+                X_train = fps_train
+                X_test = fps_test
 
             print('Fingerprint calculation complete.')
 
@@ -358,13 +357,18 @@ class ModelTester:
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
         self.use_natom_features = args.use_natom_features
-        if 'atypes' in args._get_args():
+
+        # Newer features with defaults for compatibility with older models.
+        if 'use_natom_features' in args._get_args():
+            self.use_natom_features = args.use_natom_features
             self.atypes = args.atypes
         else:
+            self.use_natom_features = False
             self.atypes = set()
-            if self.use_natom_features:
-                print('natom features cannot be used without atom types being set.')
-                self.use_natom_features = False
+        if 'descriptor_construction' in args._get_args():
+            self.descriptor_construction = args.descriptor_construction
+        else:
+            self.descriptor_construction = 'diffs'
 
         # 
         if test_dataset is not None:
@@ -417,13 +421,12 @@ class ModelTester:
         if self.verbose: print('Data loaded. Calculating reaction difference fingerprints.')
 
         # Calculate reaction difference fingerprints.
-        diffs = calc_diffs(self.num_reacs, self.descriptor_type, rmol, pmol, dH, self.morgan_radius, self.morgan_num_bits)
+        fps = calc_fps(self.num_reacs, self.descriptor_type, self.descriptor_construction,
+                         rmol, pmol, dH, self.morgan_radius, self.morgan_num_bits)
         if self.use_natom_features:
             if self.verbose: print('Adding natom-based features.')
             nafs = calc_natom_features(self.num_reacs, rmol, pmol)
-            fps = np.concatenate((diffs, nafs), axis=1)
-        else:
-            fps = diffs
+            fps = np.concatenate((fps, nafs), axis=1)
         print('Fingerprint calculation complete.')
 
         return fps, Eact

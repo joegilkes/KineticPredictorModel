@@ -62,5 +62,5 @@ class CLICommand(SharedArgs):
 
         mp = ModelPredictor(args)
 
-        diff = mp.process_xyzs()
-        mp.predict(diff)
+        fps = mp.process_xyzs()
+        mp.predict(fps)
