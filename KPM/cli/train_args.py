@@ -198,7 +198,7 @@ class CLICommand(SharedArgs):
         trainer.run(X_train, y_train)
 
         # Test model on both training and testing data.
-        tester = ModelTester(args.model_out)
+        tester = ModelTester(args.model_out, verbose=True if args.verbose == 'True' else False)
 
         Eact_pred_train, Eact_uncert_train = tester.predict(X_train, y_train, 'train')
         tester.plot_correlation(y_train, Eact_pred_train, Eact_uncert_train, 'train')
