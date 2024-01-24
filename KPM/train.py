@@ -6,7 +6,7 @@ given molecular datasets.
 
 from KPM.utils.data_funcs import load_dataset, extract_data, split_data
 from KPM.utils.data_funcs import normalise, un_normalise
-from KPM.utils.descriptors import calc_diffs
+from KPM.utils.descriptors import calc_diffs, calc_natom_features, get_atypes
 
 from sklearn import preprocessing
 from sklearn.neural_network import MLPRegressor
@@ -42,6 +42,7 @@ class ModelTrainer:
 
         self.dataset = args.dataset
         self.num_reacs = args.num_reacs
+        self.atypes = set()
 
         self.model_out = args.model_out
         self.train_direction = args.train_direction
@@ -78,6 +79,7 @@ class ModelTrainer:
         self.smiles_type = args.smiles_type # Not used yet.
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
+        self.use_natom_features = True if args.use_natom_features == 'True' else False
         self.verbose = True if args.verbose == 'True' else False
 
         # Sanitise input for separate test/train datasets.
@@ -117,6 +119,7 @@ class ModelTrainer:
 
             # Extract and transform data dependent on train_direction.
             Eact, dH, rmol, pmol = extract_data(ea, dh, rs, ps, self.num_reacs, self.train_direction)
+            self.atypes = get_atypes(rmol)
 
             avg_Eact = np.mean(Eact)
             avg_dH = np.mean(dH)
@@ -135,12 +138,18 @@ class ModelTrainer:
             # Calculate reaction difference fingerprints.
             diffs = calc_diffs(self.num_reacs, self.descriptor_type, rmol, pmol, dH, 
                                self.morgan_radius, self.morgan_num_bits)
+            
+            if self.use_natom_features:
+                nafs = calc_natom_features(self.num_reacs, rmol, pmol, self.atypes)
+                fps = np.concatenate((diffs, nafs), axis=1)
+            else:
+                fps = diffs
 
             print('Fingerprint calculation complete.')
             if self.verbose: print(f'\nSplitting train/test data.')
 
             # Split data into train/test sets.
-            X_train, X_test, y_train, y_test = split_data('train_test_split', diffs, Eact, self.split_ratio,
+            X_train, X_test, y_train, y_test = split_data('train_test_split', fps, Eact, self.split_ratio,
                                                           self.random_seed, index_path=self.split_index_path,
                                                           verbose=self.verbose)
         # Else if loading separate train/test datasets...
@@ -156,6 +165,11 @@ class ModelTrainer:
                                                                         num_train_reacs, self.train_direction)
             Eact_test, dH_test, rmol_test, pmol_test = extract_data(ea_test, dh_test, rs_test, ps_test, 
                                                                     num_test_reacs, self.train_direction)
+            
+            self.atypes = get_atypes(rmol_train)
+            test_atypes = get_atypes(rmol_test)
+            if not test_atypes.issubset(self.atypes):
+                raise RuntimeError('Molecules in test set found with atom types that are not in training set!')
 
             avg_Eact = np.mean(Eact_train)
             avg_dH_train = np.mean(dH_train)
@@ -182,11 +196,19 @@ class ModelTrainer:
                                      self.morgan_radius, self.morgan_num_bits)
             diffs_test = calc_diffs(num_test_reacs, self.descriptor_type, rmol_test, pmol_test, dH_test,
                                      self.morgan_radius, self.morgan_num_bits)
+            
+            if self.use_natom_features:
+                if self.verbose: print('Adding natom-based features.')
+                nafs_train = calc_natom_features(num_train_reacs, rmol_train, pmol_train, self.atypes)
+                nafs_test = calc_natom_features(num_test_reacs, rmol_test, pmol_test, self.atypes)
+                X_train = np.concatenate((diffs_train, nafs_train), axis=1)
+                X_test = np.concatenate((diffs_test, nafs_test), axis=1)
+            else:
+                X_train = diffs_train
+                X_test = diffs_test
 
             print('Fingerprint calculation complete.')
 
-            X_train = diffs_train
-            X_test = diffs_test
             y_train = Eact_train
             y_test = Eact_test
 
@@ -335,6 +357,14 @@ class ModelTester:
         self.smiles_type = args.smiles_type # Not used yet.
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
+        self.use_natom_features = args.use_natom_features
+        if 'atypes' in args._get_args():
+            self.atypes = args.atypes
+        else:
+            self.atypes = set()
+            if self.use_natom_features:
+                print('natom features cannot be used without atom types being set.')
+                self.use_natom_features = False
 
         # 
         if test_dataset is not None:
@@ -368,6 +398,11 @@ class ModelTester:
         # Extract and transform data dependent on train_direction.
         Eact, dH, rmol, pmol = extract_data(ea, dh, rs, ps, self.num_reacs, self.train_direction)
 
+        if len(self.atypes) > 0:
+            test_atypes = get_atypes(rmol)
+            if not test_atypes.issubset(self.atypes):
+                raise RuntimeError('Molecules in test set found with atom types that are not in training set!')
+
         avg_Eact = np.mean(Eact)
         avg_dH = np.mean(dH)
         if self.verbose:
@@ -383,9 +418,15 @@ class ModelTester:
 
         # Calculate reaction difference fingerprints.
         diffs = calc_diffs(self.num_reacs, self.descriptor_type, rmol, pmol, dH, self.morgan_radius, self.morgan_num_bits)
+        if self.use_natom_features:
+            if self.verbose: print('Adding natom-based features.')
+            nafs = calc_natom_features(self.num_reacs, rmol, pmol)
+            fps = np.concatenate((diffs, nafs), axis=1)
+        else:
+            fps = diffs
         print('Fingerprint calculation complete.')
 
-        return diffs, Eact
+        return fps, Eact
 
 
     def predict(self, X: ArrayLike, y: ArrayLike, data_type):

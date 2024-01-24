@@ -66,26 +66,26 @@ def extract_data(ea: list, dh: list, rs: list, ps: list, num_reacs: int, train_d
         for i in range(num_reacs):
             Eact[i] = ea[i]
             dH[i] = dh[i]
-            rmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
-            pmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
+            rmol.append(Chem.AddHs(Chem.MolFromSmiles(rs[i], smiles_params)))
+            pmol.append(Chem.AddHs(Chem.MolFromSmiles(ps[i], smiles_params)))
     elif train_direction == 'backward':
         for i in range(num_reacs):
             Eact[i] = ea[i] - dh[i]
             dH[i] = -dh[i]
-            rmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
-            pmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
+            rmol.append(Chem.AddHs(Chem.MolFromSmiles(ps[i], smiles_params)))
+            pmol.append(Chem.AddHs(Chem.MolFromSmiles(rs[i], smiles_params)))
     elif train_direction == 'both':
         half_reacs = int(num_reacs/2)
         for i in range(half_reacs):
             Eact[i] = ea[i]
             dH[i] = dh[i]
-            rmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
-            pmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
+            rmol.append(Chem.AddHs(Chem.MolFromSmiles(rs[i], smiles_params)))
+            pmol.append(Chem.AddHs(Chem.MolFromSmiles(ps[i], smiles_params)))
         for i in range(half_reacs):
             Eact[i+half_reacs] = ea[i] - dh[i]
             dH[i+half_reacs] = -dh[i]
-            rmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
-            pmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
+            rmol.append(Chem.AddHs(Chem.MolFromSmiles(ps[i], smiles_params)))
+            pmol.append(Chem.AddHs(Chem.MolFromSmiles(rs[i], smiles_params)))
 
     return Eact, dH, rmol, pmol
 

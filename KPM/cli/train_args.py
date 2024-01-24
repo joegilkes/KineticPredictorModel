@@ -181,6 +181,11 @@ class CLICommand(SharedArgs):
                             type=int,
                             default=5,
                             help='Morgan fingerprint radius.')
+        parser.add_argument('--use_natom_features',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='True',
+                            help='Whether to enable natom features in difference fingerprint.')
 
 
     @staticmethod
