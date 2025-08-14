@@ -116,6 +116,7 @@ class ModelTrainer:
         # If loading a single combined dataset that needs to be split...
         if self.separate_test_dataset is None:
             print('Taking train/test data from a single dataset.')
+            self.split_type = 'none'
             ea, dh, rs, ps = load_dataset(self.dataset)
 
             # Extract and transform data dependent on train_direction.
@@ -148,7 +149,7 @@ class ModelTrainer:
             if self.verbose: print(f'\nSplitting train/test data.')
 
             # Split data into train/test sets.
-            X_train, X_test, y_train, y_test = split_data('train_test_split', fps, Eact, self.split_ratio,
+            X_train, X_test, y_train, y_test = split_data(self.split_method, fps, Eact, self.split_ratio,
                                                           self.random_seed, index_path=self.split_index_path,
                                                           verbose=self.verbose)
         # Else if loading separate train/test datasets...
@@ -159,11 +160,11 @@ class ModelTrainer:
 
             # Extract and transform data dependent on train_direction.
             num_train_reacs = len(ea_train) * (2 if self.train_direction=='both' else 1)
-            num_test_reacs = len(ea_test) * (2 if self.train_direction=='both' else 1)
+            num_test_reacs = len(ea_test)
             Eact_train, dH_train, rmol_train, pmol_train = extract_data(ea_train, dh_train, rs_train, ps_train, 
                                                                         num_train_reacs, self.train_direction)
             Eact_test, dH_test, rmol_test, pmol_test = extract_data(ea_test, dh_test, rs_test, ps_test, 
-                                                                    num_test_reacs, self.train_direction)
+                                                                    num_test_reacs, 'forward')
             
             self.atypes = get_atypes(rmol_train)
             test_atypes = get_atypes(rmol_test)
@@ -261,11 +262,17 @@ class ModelTrainer:
             X_train: Array of reaction difference fingerprints.
             y_train: Array of normalised activation energies.
         '''
-        scaler = preprocessing.StandardScaler().fit(X_train)
-        X_train_scaled = scaler.transform(X_train)
+        if self.split_method == 'cv':
+            scaler = preprocessing.StandardScaler().fit(X_train[0])
+            X_train_scaled = [scaler.transform(X_train[i]) for i in range(len(X_train))]
+        else:
+            scaler = preprocessing.StandardScaler().fit(X_train)
+            X_train_scaled = scaler.transform(X_train)
         if self.verbose: print('Scaled data.')
 
         if self.do_hyperparams:
+            if self.split_method == 'cv':
+                raise ValueError('Unable to perform hyperparameter optimisation with split_method=cv.')
             print('Running hyperparameter optimisation.')
             # Note that this removes all keys being optimised from `self.nn_params`
             regr_params = self.opt_hyperparams(X_train_scaled, y_train)
@@ -280,7 +287,10 @@ class ModelTrainer:
         for i in range(self.nn_ensemble_size):
             if self.verbose: print(f'Training NN {i+1}...')
             rs = self.random_seed+i if self.random_seed is not None else None
-            X, y = shuffle(X_train_scaled, y_train, random_state=rs)
+            if self.split_method == 'cv':
+                X, y = X_train_scaled[i], y_train[i]
+            else:
+                X, y = shuffle(X_train_scaled, y_train, random_state=rs)
             self.nn_params['random_state'] = rs
             if self.nn_out_activation != 'identity':
                 # This trick is required to bypass the initializer, which enforces identity.

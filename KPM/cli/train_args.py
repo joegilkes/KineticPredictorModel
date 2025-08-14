@@ -52,7 +52,7 @@ class CLICommand(SharedArgs):
         parser.add_argument('--split_method',
                             type=str,
                             choices=['cv','train_test_split','ShuffleSplit','manualSplit'],
-                            default='cv',
+                            default='train_test_split',
                             help='Data splitting method to split train/test set with.')
         parser.add_argument('--split_ratio',
                             type=str_to_tuple, # Internal conversion of string-form tuple into Python tuple.
