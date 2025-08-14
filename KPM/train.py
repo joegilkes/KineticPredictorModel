@@ -72,6 +72,7 @@ class ModelTrainer:
         self.nn_learning_rate = args.nn_learning_rate
         self.nn_learning_rate_init = args.nn_learning_rate_init
         self.nn_out_activation = args.nn_out_activation
+        self.nn_early_stopping = True if args.nn_early_stopping == 'True' else False
         self.nn_learning_rate_max = args.nn_learning_rate_max # Not used yet, doesn't look like this is an option.
         self.nn_verbose = True if args.nn_verbose == 'True' else False
         self.descriptor_type = args.descriptor_type # Only MorganF currently implemented.
@@ -90,6 +91,9 @@ class ModelTrainer:
         elif self.separate_test_dataset is not None:
             if self.separate_train_dataset is None:
                 raise ValueError('If separate_test_dataset is specified, separate_train_dataset must also be specified.')
+            
+        if self.nn_out_activation != 'identity' and self.nn_early_stopping:
+            raise ValueError('Unable to use non-identity output activation with early stopping.')
 
         # Modify number of reactions based on train_direction.
         if self.train_direction == 'both':
@@ -106,6 +110,8 @@ class ModelTrainer:
             'max_iter': self.nn_max_iters,
             'n_iter_no_change': self.nn_n_iter_no_change,
             'tol': self.nn_tol,
+            'early_stopping': self.nn_early_stopping,
+            'batch_size': 64,
             'random_state': self.random_seed,
             'verbose': self.nn_verbose
         }

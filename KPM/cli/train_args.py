@@ -151,6 +151,11 @@ class CLICommand(SharedArgs):
                             choices=['identity', 'logistic', 'tanh', 'relu'],
                             default='identity',
                             help='The activation function for the neural network\'s output layer')
+        parser.add_argument('--nn_early_stopping',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='True',
+                            help='Whether to use early stopping.')
         parser.add_argument('--nn_verbose',
                             type=str,
                             choices=['True', 'False'],
