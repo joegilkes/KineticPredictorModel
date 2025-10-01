@@ -166,11 +166,11 @@ class ModelTrainer:
 
             # Extract and transform data dependent on train_direction.
             num_train_reacs = len(ea_train) * (2 if self.train_direction=='both' else 1)
-            num_test_reacs = len(ea_test)
+            num_test_reacs = len(ea_test) * (2 if self.train_direction=='both' else 1)
             Eact_train, dH_train, rmol_train, pmol_train = extract_data(ea_train, dh_train, rs_train, ps_train, 
                                                                         num_train_reacs, self.train_direction)
             Eact_test, dH_test, rmol_test, pmol_test = extract_data(ea_test, dh_test, rs_test, ps_test, 
-                                                                    num_test_reacs, 'forward')
+                                                                    num_test_reacs, self.train_direction)
             
             self.atypes = get_atypes(rmol_train)
             test_atypes = get_atypes(rmol_test)
@@ -313,7 +313,7 @@ class ModelTrainer:
         print('Training complete!\n')
         
         norm_vars = [self.norm_avg_Eact, self.norm_std_Eact]
-        np.savez(self.model_out, models=regr, scaler=scaler, norm_vars=norm_vars, args=self.argparse_args)
+        np.savez(self.model_out, models=regr, scaler=scaler, norm_vars=norm_vars, args=self.argparse_args, atypes=self.atypes)
 
 
 class ModelTester:
@@ -372,16 +372,15 @@ class ModelTester:
         self.smiles_type = args.smiles_type # Not used yet.
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
-        self.use_natom_features = args.use_natom_features
 
         # Newer features with defaults for compatibility with older models.
-        if 'use_natom_features' in args._get_args():
+        if 'use_natom_features' in args:
             self.use_natom_features = args.use_natom_features
-            self.atypes = args.atypes
+            self.atypes = model['atypes'][()]
         else:
             self.use_natom_features = False
             self.atypes = set()
-        if 'descriptor_construction' in args._get_args():
+        if 'descriptor_construction' in args:
             self.descriptor_construction = args.descriptor_construction
         else:
             self.descriptor_construction = 'diffs'
@@ -441,7 +440,7 @@ class ModelTester:
                          rmol, pmol, dH, self.morgan_radius, self.morgan_num_bits)
         if self.use_natom_features:
             if self.verbose: print('Adding natom-based features.')
-            nafs = calc_natom_features(self.num_reacs, rmol, pmol)
+            nafs = calc_natom_features(self.num_reacs, rmol, pmol, self.atypes)
             fps = np.concatenate((fps, nafs), axis=1)
         print('Fingerprint calculation complete.')
 
@@ -489,6 +488,8 @@ class ModelTester:
 
         # Save predictions if requested.
         if self.training_prediction_dir is not None:
+            if not os.path.exists(self.training_prediction_dir):
+                os.mkdir(self.training_prediction_dir)
             save_path = os.path.join(self.training_prediction_dir, f'Eact_pred_{data_type}.npz')
             np.savez(save_path, Eacts=Eacts, uncerts=uncerts)
             if self.verbose: print(f'Predictions saved to {save_path}\n')
