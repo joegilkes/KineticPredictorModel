@@ -6,7 +6,7 @@ given molecular datasets.
 
 from KPM.utils.data_funcs import load_dataset, extract_data, split_data
 from KPM.utils.data_funcs import normalise, un_normalise
-from KPM.utils.descriptors import calc_diffs
+from KPM.utils.descriptors import calc_fps, calc_natom_features, get_atypes
 
 from sklearn import preprocessing
 from sklearn.neural_network import MLPRegressor
@@ -42,6 +42,7 @@ class ModelTrainer:
 
         self.dataset = args.dataset
         self.num_reacs = args.num_reacs
+        self.atypes = set()
 
         self.model_out = args.model_out
         self.train_direction = args.train_direction
@@ -71,13 +72,16 @@ class ModelTrainer:
         self.nn_learning_rate = args.nn_learning_rate
         self.nn_learning_rate_init = args.nn_learning_rate_init
         self.nn_out_activation = args.nn_out_activation
+        self.nn_early_stopping = True if args.nn_early_stopping == 'True' else False
         self.nn_learning_rate_max = args.nn_learning_rate_max # Not used yet, doesn't look like this is an option.
         self.nn_verbose = True if args.nn_verbose == 'True' else False
         self.descriptor_type = args.descriptor_type # Only MorganF currently implemented.
+        self.descriptor_construction = args.descriptor_construction
         self.similarity_type = args.similarity_type # Not used yet.
         self.smiles_type = args.smiles_type # Not used yet.
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
+        self.use_natom_features = True if args.use_natom_features == 'True' else False
         self.verbose = True if args.verbose == 'True' else False
 
         # Sanitise input for separate test/train datasets.
@@ -87,6 +91,9 @@ class ModelTrainer:
         elif self.separate_test_dataset is not None:
             if self.separate_train_dataset is None:
                 raise ValueError('If separate_test_dataset is specified, separate_train_dataset must also be specified.')
+            
+        if self.nn_out_activation != 'identity' and self.nn_early_stopping:
+            raise ValueError('Unable to use non-identity output activation with early stopping.')
 
         # Modify number of reactions based on train_direction.
         if self.train_direction == 'both':
@@ -103,6 +110,8 @@ class ModelTrainer:
             'max_iter': self.nn_max_iters,
             'n_iter_no_change': self.nn_n_iter_no_change,
             'tol': self.nn_tol,
+            'early_stopping': self.nn_early_stopping,
+            'batch_size': 64,
             'random_state': self.random_seed,
             'verbose': self.nn_verbose
         }
@@ -113,10 +122,12 @@ class ModelTrainer:
         # If loading a single combined dataset that needs to be split...
         if self.separate_test_dataset is None:
             print('Taking train/test data from a single dataset.')
+            self.split_type = 'none'
             ea, dh, rs, ps = load_dataset(self.dataset)
 
             # Extract and transform data dependent on train_direction.
             Eact, dH, rmol, pmol = extract_data(ea, dh, rs, ps, self.num_reacs, self.train_direction)
+            self.atypes = get_atypes(rmol)
 
             avg_Eact = np.mean(Eact)
             avg_dH = np.mean(dH)
@@ -133,14 +144,18 @@ class ModelTrainer:
             if self.verbose: print('Data sorted. Calculating reaction difference fingerprints.')
 
             # Calculate reaction difference fingerprints.
-            diffs = calc_diffs(self.num_reacs, self.descriptor_type, rmol, pmol, dH, 
-                               self.morgan_radius, self.morgan_num_bits)
+            fps = calc_fps(self.num_reacs, self.descriptor_type, self.descriptor_construction,
+                           rmol, pmol, dH, self.morgan_radius, self.morgan_num_bits)
+            
+            if self.use_natom_features:
+                nafs = calc_natom_features(self.num_reacs, rmol, pmol, self.atypes)
+                fps = np.concatenate((fps, nafs), axis=1)
 
             print('Fingerprint calculation complete.')
             if self.verbose: print(f'\nSplitting train/test data.')
 
             # Split data into train/test sets.
-            X_train, X_test, y_train, y_test = split_data('train_test_split', diffs, Eact, self.split_ratio,
+            X_train, X_test, y_train, y_test = split_data(self.split_method, fps, Eact, self.split_ratio,
                                                           self.random_seed, index_path=self.split_index_path,
                                                           verbose=self.verbose)
         # Else if loading separate train/test datasets...
@@ -156,6 +171,11 @@ class ModelTrainer:
                                                                         num_train_reacs, self.train_direction)
             Eact_test, dH_test, rmol_test, pmol_test = extract_data(ea_test, dh_test, rs_test, ps_test, 
                                                                     num_test_reacs, self.train_direction)
+            
+            self.atypes = get_atypes(rmol_train)
+            test_atypes = get_atypes(rmol_test)
+            if not test_atypes.issubset(self.atypes):
+                raise RuntimeError('Molecules in test set found with atom types that are not in training set!')
 
             avg_Eact = np.mean(Eact_train)
             avg_dH_train = np.mean(dH_train)
@@ -178,15 +198,23 @@ class ModelTrainer:
             if self.verbose: print('Data sorted. Calculating reaction difference fingerprints.')
 
             # Calculate reaction difference fingerprints.
-            diffs_train = calc_diffs(num_train_reacs, self.descriptor_type, rmol_train, pmol_train, dH_train,
-                                     self.morgan_radius, self.morgan_num_bits)
-            diffs_test = calc_diffs(num_test_reacs, self.descriptor_type, rmol_test, pmol_test, dH_test,
-                                     self.morgan_radius, self.morgan_num_bits)
+            fps_train = calc_fps(num_train_reacs, self.descriptor_type, self.descriptor_construction,
+                                   rmol_train, pmol_train, dH_train, self.morgan_radius, self.morgan_num_bits)
+            fps_test = calc_fps(num_test_reacs, self.descriptor_type, self.descriptor_construction,
+                                rmol_test, pmol_test, dH_test, self.morgan_radius, self.morgan_num_bits)
+            
+            if self.use_natom_features:
+                if self.verbose: print('Adding natom-based features.')
+                nafs_train = calc_natom_features(num_train_reacs, rmol_train, pmol_train, self.atypes)
+                nafs_test = calc_natom_features(num_test_reacs, rmol_test, pmol_test, self.atypes)
+                X_train = np.concatenate((fps_train, nafs_train), axis=1)
+                X_test = np.concatenate((fps_test, nafs_test), axis=1)
+            else:
+                X_train = fps_train
+                X_test = fps_test
 
             print('Fingerprint calculation complete.')
 
-            X_train = diffs_train
-            X_test = diffs_test
             y_train = Eact_train
             y_test = Eact_test
 
@@ -240,11 +268,17 @@ class ModelTrainer:
             X_train: Array of reaction difference fingerprints.
             y_train: Array of normalised activation energies.
         '''
-        scaler = preprocessing.StandardScaler().fit(X_train)
-        X_train_scaled = scaler.transform(X_train)
+        if self.split_method == 'cv':
+            scaler = preprocessing.StandardScaler().fit(X_train[0])
+            X_train_scaled = [scaler.transform(X_train[i]) for i in range(len(X_train))]
+        else:
+            scaler = preprocessing.StandardScaler().fit(X_train)
+            X_train_scaled = scaler.transform(X_train)
         if self.verbose: print('Scaled data.')
 
         if self.do_hyperparams:
+            if self.split_method == 'cv':
+                raise ValueError('Unable to perform hyperparameter optimisation with split_method=cv.')
             print('Running hyperparameter optimisation.')
             # Note that this removes all keys being optimised from `self.nn_params`
             regr_params = self.opt_hyperparams(X_train_scaled, y_train)
@@ -259,7 +293,10 @@ class ModelTrainer:
         for i in range(self.nn_ensemble_size):
             if self.verbose: print(f'Training NN {i+1}...')
             rs = self.random_seed+i if self.random_seed is not None else None
-            X, y = shuffle(X_train_scaled, y_train, random_state=rs)
+            if self.split_method == 'cv':
+                X, y = X_train_scaled[i], y_train[i]
+            else:
+                X, y = shuffle(X_train_scaled, y_train, random_state=rs)
             self.nn_params['random_state'] = rs
             if self.nn_out_activation != 'identity':
                 # This trick is required to bypass the initializer, which enforces identity.
@@ -276,7 +313,7 @@ class ModelTrainer:
         print('Training complete!\n')
         
         norm_vars = [self.norm_avg_Eact, self.norm_std_Eact]
-        np.savez(self.model_out, models=regr, scaler=scaler, norm_vars=norm_vars, args=self.argparse_args)
+        np.savez(self.model_out, models=regr, scaler=scaler, norm_vars=norm_vars, args=self.argparse_args, atypes=self.atypes)
 
 
 class ModelTester:
@@ -336,6 +373,18 @@ class ModelTester:
         self.morgan_num_bits = args.morgan_num_bits
         self.morgan_radius = args.morgan_radius
 
+        # Newer features with defaults for compatibility with older models.
+        if 'use_natom_features' in args:
+            self.use_natom_features = args.use_natom_features
+            self.atypes = model['atypes'][()]
+        else:
+            self.use_natom_features = False
+            self.atypes = set()
+        if 'descriptor_construction' in args:
+            self.descriptor_construction = args.descriptor_construction
+        else:
+            self.descriptor_construction = 'diffs'
+
         # 
         if test_dataset is not None:
             print(f'Testing with data from {test_dataset}')
@@ -368,6 +417,11 @@ class ModelTester:
         # Extract and transform data dependent on train_direction.
         Eact, dH, rmol, pmol = extract_data(ea, dh, rs, ps, self.num_reacs, self.train_direction)
 
+        if len(self.atypes) > 0:
+            test_atypes = get_atypes(rmol)
+            if not test_atypes.issubset(self.atypes):
+                raise RuntimeError('Molecules in test set found with atom types that are not in training set!')
+
         avg_Eact = np.mean(Eact)
         avg_dH = np.mean(dH)
         if self.verbose:
@@ -382,10 +436,15 @@ class ModelTester:
         if self.verbose: print('Data loaded. Calculating reaction difference fingerprints.')
 
         # Calculate reaction difference fingerprints.
-        diffs = calc_diffs(self.num_reacs, self.descriptor_type, rmol, pmol, dH, self.morgan_radius, self.morgan_num_bits)
+        fps = calc_fps(self.num_reacs, self.descriptor_type, self.descriptor_construction,
+                         rmol, pmol, dH, self.morgan_radius, self.morgan_num_bits)
+        if self.use_natom_features:
+            if self.verbose: print('Adding natom-based features.')
+            nafs = calc_natom_features(self.num_reacs, rmol, pmol, self.atypes)
+            fps = np.concatenate((fps, nafs), axis=1)
         print('Fingerprint calculation complete.')
 
-        return diffs, Eact
+        return fps, Eact
 
 
     def predict(self, X: ArrayLike, y: ArrayLike, data_type):
@@ -429,6 +488,8 @@ class ModelTester:
 
         # Save predictions if requested.
         if self.training_prediction_dir is not None:
+            if not os.path.exists(self.training_prediction_dir):
+                os.mkdir(self.training_prediction_dir)
             save_path = os.path.join(self.training_prediction_dir, f'Eact_pred_{data_type}.npz')
             np.savez(save_path, Eacts=Eacts, uncerts=uncerts)
             if self.verbose: print(f'Predictions saved to {save_path}\n')

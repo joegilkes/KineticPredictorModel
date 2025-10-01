@@ -52,7 +52,7 @@ class CLICommand(SharedArgs):
         parser.add_argument('--split_method',
                             type=str,
                             choices=['cv','train_test_split','ShuffleSplit','manualSplit'],
-                            default='cv',
+                            default='train_test_split',
                             help='Data splitting method to split train/test set with.')
         parser.add_argument('--split_ratio',
                             type=str_to_tuple, # Internal conversion of string-form tuple into Python tuple.
@@ -151,6 +151,11 @@ class CLICommand(SharedArgs):
                             choices=['identity', 'logistic', 'tanh', 'relu'],
                             default='identity',
                             help='The activation function for the neural network\'s output layer')
+        parser.add_argument('--nn_early_stopping',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='True',
+                            help='Whether to use early stopping.')
         parser.add_argument('--nn_verbose',
                             type=str,
                             choices=['True', 'False'],
@@ -163,6 +168,11 @@ class CLICommand(SharedArgs):
                             choices=['soap', 'mbtr', 'MorganF'],
                             default='MorganF',
                             help='The type of molecular descriptor to train on.')
+        parser.add_argument('--descriptor_construction',
+                            type=str,
+                            choices=['diffs', 'concat', 'diffs+concat'],
+                            default='diffs',
+                            help='The way in which descriptors should be constructed - by subtraction, concatenation, or both.')
         parser.add_argument('--similarity_type',
                             type=str,
                             choices=['tanimoto', 'fraggle'],
@@ -181,6 +191,11 @@ class CLICommand(SharedArgs):
                             type=int,
                             default=5,
                             help='Morgan fingerprint radius.')
+        parser.add_argument('--use_natom_features',
+                            type=str,
+                            choices=['True', 'False'],
+                            default='True',
+                            help='Whether to enable natom features in difference fingerprint.')
 
 
     @staticmethod
@@ -193,7 +208,7 @@ class CLICommand(SharedArgs):
         trainer.run(X_train, y_train)
 
         # Test model on both training and testing data.
-        tester = ModelTester(args.model_out)
+        tester = ModelTester(args.model_out, verbose=True if args.verbose == 'True' else False)
 
         Eact_pred_train, Eact_uncert_train = tester.predict(X_train, y_train, 'train')
         tester.plot_correlation(y_train, Eact_pred_train, Eact_uncert_train, 'train')

@@ -4,7 +4,7 @@ from numpy.typing import ArrayLike
 from typing import Tuple
 from rdkit import Chem
 from rdkit.Chem import rdmolfiles
-from sklearn.model_selection import RepeatedKFold, train_test_split, ShuffleSplit
+from sklearn.model_selection import KFold, train_test_split, ShuffleSplit
 from sklearn.utils import shuffle
 
 def load_dataset(csv_file: str, verbose: bool = False):
@@ -66,26 +66,26 @@ def extract_data(ea: list, dh: list, rs: list, ps: list, num_reacs: int, train_d
         for i in range(num_reacs):
             Eact[i] = ea[i]
             dH[i] = dh[i]
-            rmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
-            pmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
+            rmol.append(Chem.AddHs(Chem.MolFromSmiles(rs[i], smiles_params)))
+            pmol.append(Chem.AddHs(Chem.MolFromSmiles(ps[i], smiles_params)))
     elif train_direction == 'backward':
         for i in range(num_reacs):
             Eact[i] = ea[i] - dh[i]
             dH[i] = -dh[i]
-            rmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
-            pmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
+            rmol.append(Chem.AddHs(Chem.MolFromSmiles(ps[i], smiles_params)))
+            pmol.append(Chem.AddHs(Chem.MolFromSmiles(rs[i], smiles_params)))
     elif train_direction == 'both':
         half_reacs = int(num_reacs/2)
         for i in range(half_reacs):
             Eact[i] = ea[i]
             dH[i] = dh[i]
-            rmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
-            pmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
+            rmol.append(Chem.AddHs(Chem.MolFromSmiles(rs[i], smiles_params)))
+            pmol.append(Chem.AddHs(Chem.MolFromSmiles(ps[i], smiles_params)))
         for i in range(half_reacs):
             Eact[i+half_reacs] = ea[i] - dh[i]
             dH[i+half_reacs] = -dh[i]
-            rmol.append(Chem.MolFromSmiles(ps[i], smiles_params))
-            pmol.append(Chem.MolFromSmiles(rs[i], smiles_params))
+            rmol.append(Chem.AddHs(Chem.MolFromSmiles(ps[i], smiles_params)))
+            pmol.append(Chem.AddHs(Chem.MolFromSmiles(rs[i], smiles_params)))
 
     return Eact, dH, rmol, pmol
 
@@ -109,7 +109,7 @@ def split_data(split_method: str, X: ArrayLike, y: ArrayLike, split_ratio:Tuple[
         verbose: (Optional; Default: False) Whether or not to pint extra information.
     '''
     if split_method == 'cv':
-        kf = RepeatedKFold(n_splits=n_splits, n_repeats=1, random_state=seed)
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
         for train_idx, test_idx in kf.split(X):
             X_train = X[train_idx]
             y_train = y[train_idx]
